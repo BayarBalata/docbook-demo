@@ -1,14 +1,19 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DocBook - Beauty & Wellness Booking</title>
+    <title>DocBook - Beauty Salon & Center Booking</title>
     <link rel="stylesheet" href="style.css">
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <script type="module" src="firebase-config.js"></script>
     <script type="module" src="app.js"></script>
+    <!-- Google Maps API -->
+    <script async defer
+        src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAfPTJjw9HiF5yc99hn3SyRSpNVfB2wmMk&callback=initMapCallback"></script>
 </head>
+
 <body>
     <!-- Dev Toolbar -->
     <div id="dev-toolbar">
@@ -16,7 +21,6 @@
         <button onclick="switchDashboard('customer')" class="dev-btn active">Customer</button>
         <button onclick="switchDashboard('owner')" class="dev-btn">Owner</button>
         <button onclick="switchDashboard('admin')" class="dev-btn">Admin</button>
-        <button id="seed-btn" class="dev-btn" style="background: #ef4444;">Seed DB</button>
     </div>
 
     <header>
@@ -25,6 +29,8 @@
             <nav>
                 <a href="#home" class="nav-link">Home</a>
                 <a href="#explore" class="nav-link">Explore</a>
+                <button id="map-btn" class="btn-outline"
+                    style="background: linear-gradient(135deg, #f3e8ff, #e0aaff); border: none;">📍 Map</button>
                 <button id="login-btn" class="btn-outline">Login</button>
                 <div id="user-profile" style="display: none;">
                     <span id="user-name"></span>
@@ -37,11 +43,19 @@
     <main id="dashboard-customer">
         <section id="home" class="hero">
             <div class="container">
-                <h1>Discover Beauty & Wellness</h1>
-                <p>Book appointments at the best salons and spas in your city.</p>
+                <h1>Discover Beauty Salons & Centers</h1>
+                <p>Book appointments at the best salons and beauty centers in your city.</p>
                 <div class="search-bar">
                     <input type="text" placeholder="Search for services (e.g. Haircut, Botox)...">
                     <button class="btn-primary">Search</button>
+                </div>
+            </div>
+        </section>
+        <!-- SPONSOR BANNER AREA -->
+        <section id="sponsor-banner" class="sponsor-section">
+            <div class="container">
+                <div class="sponsor-carousel" id="sponsor-carousel">
+                    <!-- Sponsors loaded via JS -->
                 </div>
             </div>
         </section>
@@ -93,9 +107,95 @@
     <!-- ADMIN DASHBOARD -->
     <main id="dashboard-admin" style="display: none;">
         <div class="container">
-            <h1>Admin Dashboard</h1>
-            <p>Manage Users and Merchants</p>
-            <!-- Admin content -->
+            <div class="dashboard-header">
+                <h1>👑 Admin Dashboard</h1>
+            </div>
+
+            <!-- Admin Tabs -->
+            <div class="admin-tabs">
+                <button class="admin-tab active" data-tab="stores">🏪 Stores</button>
+                <button class="admin-tab" data-tab="offers">🎁 Offers</button>
+                <button class="admin-tab" data-tab="sponsors">📰 Sponsors</button>
+            </div>
+
+            <!-- STORES TAB -->
+            <div id="admin-stores" class="admin-panel">
+                <div class="panel-header">
+                    <h2>Store Management</h2>
+                    <button class="btn-primary" onclick="openCreateStoreModal()">
+                        + Create New Store
+                    </button>
+                </div>
+                <div class="admin-table-container">
+                    <table class="admin-table" id="stores-table">
+                        <thead>
+                            <tr>
+                                <th>Store Name</th>
+                                <th>Category</th>
+                                <th>Location</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="stores-tbody">
+                            <!-- Loaded via JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- OFFERS TAB -->
+            <div id="admin-offers" class="admin-panel" style="display: none;">
+                <div class="panel-header">
+                    <h2>Offers & Promotions</h2>
+                    <button class="btn-primary" onclick="openCreateOfferModal()">
+                        + New Offer
+                    </button>
+                </div>
+                <div class="admin-table-container">
+                    <table class="admin-table" id="offers-table">
+                        <thead>
+                            <tr>
+                                <th>Store</th>
+                                <th>Service</th>
+                                <th>Discount</th>
+                                <th>Duration</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="offers-tbody">
+                            <!-- Loaded via JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- SPONSORS TAB -->
+            <div id="admin-sponsors" class="admin-panel" style="display: none;">
+                <div class="panel-header">
+                    <h2>Sponsor Management</h2>
+                    <button class="btn-primary" onclick="openCreateSponsorModal()">
+                        + Add Sponsor
+                    </button>
+                </div>
+
+                <div class="sponsor-type-section">
+                    <h3>🏪 Sponsored Stores</h3>
+                    <p>Featured stores will appear in the sponsor banner on the homepage.</p>
+                    <div id="sponsored-stores-list" class="sponsored-items-grid">
+                        <!-- Loaded via JS -->
+                    </div>
+                </div>
+
+                <div class="sponsor-type-section">
+                    <h3>📰 External Advertisements</h3>
+                    <p>External ads/banners that link outside the website.</p>
+                    <div id="external-ads-list" class="sponsored-items-grid">
+                        <!-- Loaded via JS -->
+                    </div>
+                </div>
+            </div>
         </div>
     </main>
 
@@ -105,7 +205,7 @@
             <span class="close">&times;</span>
             <h2>Welcome to DocBook</h2>
             <p>Sign in or create an account</p>
-            
+
             <form id="auth-form-step-1">
                 <div class="form-group">
                     <label>Name</label>
@@ -138,10 +238,192 @@
         </div>
     </div>
 
+    <!-- MAP MODAL -->
+    <div id="map-modal" class="modal">
+        <div class="map-modal-content">
+            <div class="map-header">
+                <h2>📍 Explore Stores in Erbil</h2>
+                <span class="close-map">&times;</span>
+            </div>
+            <div id="map-container"></div>
+        </div>
+    </div>
+
+    <!-- STORE MODAL (Create/Edit) -->
+    <div id="store-modal" class="modal">
+        <div class="modal-content admin-modal">
+            <span class="close-modal" onclick="closeModal('store-modal')">&times;</span>
+            <h2 id="store-modal-title">Create New Store</h2>
+            <form id="store-form">
+                <input type="hidden" id="store-id">
+                <div class="form-group">
+                    <label>Store Name</label>
+                    <input type="text" id="store-name" required placeholder="e.g. Glamour Salon">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Type</label>
+                        <select id="store-type" required>
+                            <option value="salon">Salon</option>
+                            <option value="beauty_center">Beauty Center</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Category</label>
+                        <select id="store-category" required>
+                            <option value="Hair Salon">Hair Salon</option>
+                            <option value="Nail Salon">Nail Salon</option>
+                            <option value="Barber Shop">Barber Shop</option>
+                            <option value="Aesthetics">Aesthetics</option>
+                            <option value="Skin Care">Skin Care</option>
+                            <option value="Laser Center">Laser Center</option>
+                            <option value="Makeup Studio">Makeup Studio</option>
+                            <option value="Brows & Lashes">Brows & Lashes</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Address</label>
+                    <input type="text" id="store-address" required placeholder="e.g. Ankawa, Erbil">
+                </div>
+                <div class="form-group">
+                    <label>Store Photo</label>
+                    <div class="photo-upload-container">
+                        <img id="store-photo-preview" src="" alt="Store Preview"
+                            style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; display: none; margin-bottom: 10px; background: #eee;">
+                        <input type="file" id="store-photo-file" accept="image/*" class="file-input">
+                        <input type="hidden" id="store-photo">
+                    </div>
+                </div>
+
+                <!-- Services Management Section (Only shown when editing) -->
+                <div id="services-reorder-section" class="services-reorder-section" style="display: none;">
+                    <div class="section-divider"></div>
+                    <h3>📋 Manage Services</h3>
+                    <p class="hint">Drag to reorder, click to edit, or add new services.</p>
+                    <div id="services-sortable-list" class="sortable-list">
+                        <!-- Services loaded via JS -->
+                    </div>
+                    <div class="services-actions">
+                        <button type="button" class="btn-add-service" onclick="openAddServiceModal()">
+                            ➕ Add New Service
+                        </button>
+                    </div>
+                </div>
+
+                <button type="submit" class="btn-primary full-width">Save Store</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- OFFER MODAL -->
+    <div id="offer-modal" class="modal">
+        <div class="modal-content admin-modal">
+            <span class="close-modal" onclick="closeModal('offer-modal')">&times;</span>
+            <h2>Create New Offer</h2>
+            <form id="offer-form">
+                <div class="form-group">
+                    <label>Select Store</label>
+                    <select id="offer-store" required>
+                        <!-- Populated via JS -->
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Select Service</label>
+                    <select id="offer-service" required>
+                        <!-- Populated via JS when store selected -->
+                    </select>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Discount %</label>
+                        <input type="number" id="offer-discount" min="1" max="100" required placeholder="e.g. 20">
+                    </div>
+                    <div class="form-group">
+                        <label>Duration (days)</label>
+                        <input type="number" id="offer-duration" min="1" max="365" required placeholder="e.g. 7">
+                    </div>
+                </div>
+                <button type="submit" class="btn-primary full-width">Create Offer</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- SPONSOR MODAL -->
+    <div id="sponsor-modal" class="modal">
+        <div class="modal-content admin-modal">
+            <span class="close-modal" onclick="closeModal('sponsor-modal')">&times;</span>
+            <h2>Add Sponsor</h2>
+            <form id="sponsor-form">
+                <div class="form-group">
+                    <label>Sponsor Type</label>
+                    <select id="sponsor-type" onchange="toggleSponsorFields()">
+                        <option value="store">Feature a Store</option>
+                        <option value="external">External Advertisement</option>
+                    </select>
+                </div>
+                <div id="sponsor-store-fields">
+                    <div class="form-group">
+                        <label>Select Store to Sponsor</label>
+                        <select id="sponsor-store">
+                            <!-- Populated via JS -->
+                        </select>
+                    </div>
+                </div>
+                <div id="sponsor-external-fields" style="display: none;">
+                    <div class="form-group">
+                        <label>Banner Image URL</label>
+                        <input type="url" id="sponsor-image" placeholder="https://...">
+                    </div>
+                    <div class="form-group">
+                        <label>Link URL</label>
+                        <input type="url" id="sponsor-link" placeholder="https://...">
+                    </div>
+                    <div class="form-group">
+                        <label>Title/Description</label>
+                        <input type="text" id="sponsor-title" placeholder="e.g. Special Beauty Event">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Duration (days)</label>
+                    <input type="number" id="sponsor-duration" min="1" max="365" required placeholder="e.g. 30">
+                </div>
+                <button type="submit" class="btn-primary full-width">Add Sponsor</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- SERVICE MODAL (Edit/Add Service) -->
+    <div id="service-modal" class="modal">
+        <div class="modal-content admin-modal" style="max-width: 400px;">
+            <span class="close-modal" onclick="closeModal('service-modal')">&times;</span>
+            <h2 id="service-modal-title">Edit Service</h2>
+            <form id="service-form">
+                <input type="hidden" id="service-edit-index">
+                <div class="form-group">
+                    <label>Service Name</label>
+                    <input type="text" id="service-edit-name" required placeholder="e.g. Haircut">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Price (IQD)</label>
+                        <input type="number" id="service-edit-price" required min="0" placeholder="e.g. 25000">
+                    </div>
+                    <div class="form-group">
+                        <label>Duration (mins)</label>
+                        <input type="number" id="service-edit-duration" required min="5" placeholder="e.g. 30">
+                    </div>
+                </div>
+                <button type="submit" class="btn-primary full-width">Save Service</button>
+            </form>
+        </div>
+    </div>
+
     <footer>
         <div class="container">
             <p>&copy; 2026 DocBook. All rights reserved.</p>
         </div>
     </footer>
 </body>
+
 </html>

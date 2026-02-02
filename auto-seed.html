@@ -1,86 +1,238 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
-    <title>Auto Seed</title>
+    <title>Auto Seed - Beauty Salons & Centers</title>
+    <style>
+        body {
+            font-family: 'Outfit', sans-serif;
+            padding: 40px;
+            text-align: center;
+            background: #1a1a2e;
+            color: white;
+        }
+
+        #status {
+            font-size: 1.5rem;
+            margin-top: 20px;
+        }
+
+        .progress {
+            margin-top: 20px;
+            font-size: 1rem;
+            color: #888;
+        }
+    </style>
 </head>
+
 <body>
-    <div id="status">Seeding...</div>
+    <h1>🏪 Beauty Store Seeder</h1>
+    <div id="status">Seeding 40 stores...</div>
+    <div id="progress" class="progress"></div>
+
     <script type="module">
         import { db } from "./firebase-config.js";
-        import { collection, writeBatch, doc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { collection, writeBatch, doc, getDocs, deleteDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-        const categories = [
-            { type: 'salon', category: 'Hair Salon', services: ['Haircut', 'Coloring', 'Blowdry', 'Styling', 'Keratin Treatment'] },
-            { type: 'salon', category: 'Nail Salon', services: ['Manicure', 'Pedicure', 'Nail Art', 'Gel Polish', 'Acrylics'] },
-            { type: 'beauty_center', category: 'Aesthetics', services: ['Facial', 'Laser Hair Removal', 'Microdermabrasion', 'Lash Lift', 'Brow Tinting'] },
-            { type: 'beauty_center', category: 'Spa & Wellness', services: ['Massage', 'Sauna', 'Body Scrub', 'Aromatherapy', 'Hot Stone Massage'] },
-            { type: 'salon', category: 'Barber Shop', services: ['Haircut', 'Beard Trim', 'Shave', 'Face Massage'] },
-            { type: 'beauty_center', category: 'Makeup Studio', services: ['Bridal Makeup', 'Evening Makeup', 'Party Makeup', 'Hairstyling'] }
+        // ========== SALONS (20 total) ==========
+        const salonConfigs = [
+            // Hair Salons (8)
+            { name: "Glamour Hair Studio", category: "Hair Salon", services: ["Haircut", "Hair Coloring", "Blowdry", "Highlights", "Keratin Treatment", "Deep Conditioning"] },
+            { name: "Chic Cuts", category: "Hair Salon", services: ["Haircut", "Balayage", "Hair Extensions", "Styling", "Scalp Treatment"] },
+            { name: "Royal Locks", category: "Hair Salon", services: ["Haircut", "Ombre Coloring", "Hair Mask", "Blowout", "Trim"] },
+            { name: "Elite Hair Lounge", category: "Hair Salon", services: ["Haircut", "Full Color", "Partial Highlights", "Olaplex Treatment"] },
+            { name: "Velvet Strands", category: "Hair Salon", services: ["Haircut", "Babylights", "Glossing", "Split End Treatment"] },
+            { name: "Lina's Hair (Home-Based)", category: "Hair Salon", services: ["Haircut", "Basic Coloring", "Blowdry"], isHomeBased: true },
+            { name: "Zara's Styling (Home-Based)", category: "Hair Salon", services: ["Women's Haircut", "Kids Haircut", "Basic Styling"], isHomeBased: true },
+            { name: "Diamond Hair Co.", category: "Hair Salon", services: ["Haircut", "Japanese Straightening", "Perm", "Color Correction"] },
+
+            // Nail Salons (6)
+            { name: "Polished Nails", category: "Nail Salon", services: ["Manicure", "Pedicure", "Gel Polish", "Nail Art", "French Tips"] },
+            { name: "Luxe Nails Studio", category: "Nail Salon", services: ["Acrylic Nails", "Dip Powder", "Nail Repair", "Paraffin Treatment"] },
+            { name: "Crystal Nails", category: "Nail Salon", services: ["Gel Extensions", "Chrome Nails", "Manicure", "Pedicure"] },
+            { name: "Bella Nails (Home-Based)", category: "Nail Salon", services: ["Basic Manicure", "Basic Pedicure", "Polish Change"], isHomeBased: true },
+            { name: "Ruby Nail Bar", category: "Nail Salon", services: ["Sculptured Nails", "Nail Gems", "Express Mani", "Spa Pedicure"] },
+            { name: "Opulence Nails", category: "Nail Salon", services: ["SNS Dipping", "Nail Overlay", "Cuticle Care", "Hand Massage"] },
+
+            // Barber Shops (6)
+            { name: "Classic Cuts Barbershop", category: "Barber Shop", services: ["Men's Haircut", "Beard Trim", "Hot Towel Shave", "Face Massage"] },
+            { name: "Urban Barbers", category: "Barber Shop", services: ["Fade Haircut", "Line Up", "Beard Shaping", "Scalp Massage"] },
+            { name: "The Gentleman's Den", category: "Barber Shop", services: ["Classic Cut", "Traditional Shave", "Mustache Trim", "Hair Styling"] },
+            { name: "Prime Cuts (Home-Based)", category: "Barber Shop", services: ["Men's Haircut", "Basic Beard Trim"], isHomeBased: true },
+            { name: "Sharp Edge Barbers", category: "Barber Shop", services: ["Skin Fade", "Beard Design", "Eyebrow Threading", "Hot Towel Service"] },
+            { name: "Dapper & Co.", category: "Barber Shop", services: ["Executive Cut", "Full Shave", "Grey Blending", "Hair Tattoo"] }
         ];
 
+        // ========== BEAUTY CENTERS (20 total) ==========
+        const beautyCenterConfigs = [
+            // Aesthetics/Skin Care Centers (8)
+            { name: "Glow Aesthetics Center", category: "Aesthetics", services: ["Facial", "Botox", "Dermal Fillers", "Microneedling", "PRP Treatment"] },
+            { name: "Radiance Skin Clinic", category: "Skin Care", services: ["Deep Cleansing Facial", "Acne Treatment", "Chemical Peel", "LED Light Therapy"] },
+            { name: "Pure Beauty Med Spa", category: "Aesthetics", services: ["Lip Fillers", "Cheek Fillers", "Under Eye Treatment", "Skin Tightening"] },
+            { name: "Serenity Skin Center", category: "Skin Care", services: ["Hydrafacial", "Oxygen Facial", "Microdermabrasion", "Collagen Mask"] },
+            { name: "Divine Aesthetics", category: "Aesthetics", services: ["Jawline Contouring", "Chin Filler", "Nose Filler", "Forehead Botox"] },
+            { name: "Aura Skin Lab", category: "Skin Care", services: ["Anti-Aging Facial", "Vitamin C Treatment", "Brightening Peel", "Enzyme Mask"] },
+            { name: "Dr. Sara's Clinic (Private)", category: "Aesthetics", services: ["Consultation", "Botox", "Filler Touch-Up"], isHomeBased: true },
+            { name: "Harmony Derma Center", category: "Skin Care", services: ["Acne Scar Treatment", "Pigmentation Treatment", "Laser Resurfacing"] },
+
+            // Laser & Hair Removal (4)
+            { name: "Silk Laser Studio", category: "Laser Center", services: ["Full Body Laser", "Face Laser", "Underarm Laser", "Bikini Laser", "Legs Laser"] },
+            { name: "Smooth Skin Laser", category: "Laser Center", services: ["IPL Treatment", "Laser Hair Removal", "Skin Rejuvenation", "Vein Treatment"] },
+            { name: "Precision Laser Clinic", category: "Laser Center", services: ["Diode Laser", "Alexandrite Laser", "Tattoo Removal", "Spot Treatment"] },
+            { name: "Flawless Laser (Home-Based)", category: "Laser Center", services: ["Face Laser", "Underarm Laser", "Upper Lip Laser"], isHomeBased: true },
+
+            // Makeup Studios (4)
+            { name: "Glamour Makeup Studio", category: "Makeup Studio", services: ["Bridal Makeup", "Evening Makeup", "Party Makeup", "Photoshoot Makeup"] },
+            { name: "Allure Beauty Studio", category: "Makeup Studio", services: ["Natural Makeup", "Glam Makeup", "SFX Makeup", "Makeup Lesson"] },
+            { name: "Vogue Artistry", category: "Makeup Studio", services: ["HD Makeup", "Airbrush Makeup", "Editorial Makeup", "Engagement Makeup"] },
+            { name: "Sara's Makeup (Home-Based)", category: "Makeup Studio", services: ["Simple Makeup", "Party Makeup", "Henna Design"], isHomeBased: true },
+
+            // Brows & Lashes (4)
+            { name: "Brow & Lash Bar", category: "Brows & Lashes", services: ["Microblading", "Lash Extensions", "Lash Lift", "Brow Tinting", "Brow Lamination"] },
+            { name: "Flutter Lash Studio", category: "Brows & Lashes", services: ["Classic Lashes", "Volume Lashes", "Hybrid Lashes", "Lash Removal"] },
+            { name: "Perfect Arches", category: "Brows & Lashes", services: ["Eyebrow Threading", "Ombre Brows", "Powder Brows", "Brow Wax"] },
+            { name: "Nadia's Lashes (Home-Based)", category: "Brows & Lashes", services: ["Lash Lift", "Lash Tint", "Brow Shape"], isHomeBased: true }
+        ];
+
+        // Locations with GPS coordinates in Erbil
         const locations = [
-            "Dream City, Erbil", "Royal Towers, Erbil", "Empire World, Erbil", "Ankawa, Erbil", "English Village, Erbil",
-            "Italian Village, Erbil", "Gulan Street, Erbil", "Massif Road, Erbil", "Duhok Center", "Sulaymaniyah Center"
+            { address: "Dream City, Erbil", lat: 36.2108, lng: 44.0095 },
+            { address: "Royal Towers, Erbil", lat: 36.1912, lng: 44.0183 },
+            { address: "Empire World, Erbil", lat: 36.1856, lng: 44.0127 },
+            { address: "Ankawa, Erbil", lat: 36.2247, lng: 44.0244 },
+            { address: "English Village, Erbil", lat: 36.1934, lng: 44.0412 },
+            { address: "Italian Village, Erbil", lat: 36.1889, lng: 44.0367 },
+            { address: "Gulan Street, Erbil", lat: 36.1923, lng: 44.0089 },
+            { address: "Massif Road, Erbil", lat: 36.1978, lng: 44.0156 },
+            { address: "100m Street, Erbil", lat: 36.1867, lng: 43.9987 },
+            { address: "Iskan, Erbil", lat: 36.2034, lng: 44.0289 }
         ];
 
-        const merchantNames = [
-            "Glow", "Radiance", "Zen", "Elite", "Prime", "Luxe", "Opulence", "Divine", "Serenity", "Bliss",
-            "Aura", "Harmony", "Pure", "Velvet", "Crystal", "Diamond", "Sapphire", "Ruby", "Emerald", "Gold",
-            "Silver", "Platinum", "Urban", "Chic", "Vogue", "Style", "Trend", "Modish", "Classy", "Elegant",
-            "Grace", "Charm", "Allure", "Beauty", "Glamour", "Dazzle", "Sparkle", "Shine", "Bloom", "Flourish"
+        const homeLocations = [
+            { address: "Residential Area, Ankawa", lat: 36.2267, lng: 44.0198 },
+            { address: "Private Villa, English Village", lat: 36.1945, lng: 44.0423 },
+            { address: "Home Studio, Gulan Street", lat: 36.1933, lng: 44.0078 },
+            { address: "Private Practice, Dream City", lat: 36.2098, lng: 44.0105 }
         ];
-
-        function getRandomItem(arr) {
-            return arr[Math.floor(Math.random() * arr.length)];
-        }
 
         function getRandomInt(min, max) {
             return Math.floor(Math.random() * (max - min + 1)) + min;
         }
 
+        function getRandomItem(arr) {
+            return arr[Math.floor(Math.random() * arr.length)];
+        }
+
+        async function clearExistingMerchants() {
+            const snapshot = await getDocs(collection(db, "merchants"));
+            const batch = writeBatch(db);
+            snapshot.docs.forEach(doc => batch.delete(doc.ref));
+            if (snapshot.docs.length > 0) {
+                await batch.commit();
+            }
+            return snapshot.docs.length;
+        }
+
         async function run() {
+            const statusEl = document.getElementById('status');
+            const progressEl = document.getElementById('progress');
+
             try {
+                // Clear existing data
+                progressEl.innerText = "Clearing existing merchants...";
+                const deleted = await clearExistingMerchants();
+                progressEl.innerText = `Cleared ${deleted} existing merchants. Creating new ones...`;
+
                 const batch = writeBatch(db);
-                for (let i = 0; i < 40; i++) {
-                    const cat = getRandomItem(categories);
-                    const name = `${getRandomItem(merchantNames)} ${cat.category.split(' ').pop()}`;
+                let count = 0;
+
+                // Add Salons
+                for (const salon of salonConfigs) {
                     const merchantRef = doc(collection(db, "merchants"));
-                    
+                    const location = salon.isHomeBased ? getRandomItem(homeLocations) : getRandomItem(locations);
+
+                    // Add slight randomization to coordinates to spread markers
+                    const latOffset = (Math.random() - 0.5) * 0.008;
+                    const lngOffset = (Math.random() - 0.5) * 0.008;
+
                     const merchantData = {
-                        name: name,
-                        type: cat.type,
-                        category: cat.category,
-                        address: getRandomItem(locations),
-                        rating: (Math.random() * 2 + 3).toFixed(1),
-                        description: `Experience the best ${cat.category.toLowerCase()} services in town.`,
-                        image: cat.type === 'salon' ? '💇‍♀️' : '🧖‍♀️',
-                        distance: `${getRandomInt(1, 15)} km`
+                        name: salon.name,
+                        type: "salon",
+                        category: salon.category,
+                        address: location.address,
+                        lat: location.lat + latOffset,
+                        lng: location.lng + lngOffset,
+                        rating: (Math.random() * 1.5 + 3.5).toFixed(1), // 3.5 - 5.0
+                        description: salon.isHomeBased
+                            ? `Private ${salon.category.toLowerCase()} services at a convenient home location.`
+                            : `Professional ${salon.category.toLowerCase()} offering premium services.`,
+                        image: salon.category === "Barber Shop" ? "💈" : salon.category === "Nail Salon" ? "💅" : "💇‍♀️",
+                        distance: `${getRandomInt(1, 12)} km`,
+                        isHomeBased: salon.isHomeBased || false,
+                        services: salon.services.map(s => ({
+                            name: s,
+                            price: getRandomInt(15, 80),
+                            duration: getRandomInt(20, 60)
+                        }))
                     };
 
-                    const numServices = getRandomInt(3, 6);
-                    const selectedServices = [];
-                    while (selectedServices.length < numServices) {
-                        const s = getRandomItem(cat.services);
-                        if (!selectedServices.includes(s)) selectedServices.push(s);
-                    }
-
-                    merchantData.services = selectedServices.map(s => ({
-                        name: s,
-                        price: getRandomInt(20, 150),
-                        duration: getRandomInt(30, 90)
-                    }));
-
                     batch.set(merchantRef, merchantData);
+                    count++;
                 }
 
+                // Add Beauty Centers
+                for (const center of beautyCenterConfigs) {
+                    const merchantRef = doc(collection(db, "merchants"));
+                    const location = center.isHomeBased ? getRandomItem(homeLocations) : getRandomItem(locations);
+
+                    // Add slight randomization to coordinates to spread markers
+                    const latOffset = (Math.random() - 0.5) * 0.008;
+                    const lngOffset = (Math.random() - 0.5) * 0.008;
+
+                    const merchantData = {
+                        name: center.name,
+                        type: "beauty_center",
+                        category: center.category,
+                        address: location.address,
+                        lat: location.lat + latOffset,
+                        lng: location.lng + lngOffset,
+                        rating: (Math.random() * 1.5 + 3.5).toFixed(1), // 3.5 - 5.0
+                        description: center.isHomeBased
+                            ? `Private ${center.category.toLowerCase()} services by appointment only.`
+                            : `Professional ${center.category.toLowerCase()} center with expert specialists.`,
+                        image: center.category.includes("Laser") ? "✨" : center.category.includes("Makeup") ? "💄" : center.category.includes("Lash") ? "👁️" : "🧖‍♀️",
+                        distance: `${getRandomInt(1, 15)} km`,
+                        isHomeBased: center.isHomeBased || false,
+                        services: center.services.map(s => ({
+                            name: s,
+                            price: getRandomInt(25, 200),
+                            duration: getRandomInt(30, 120)
+                        }))
+                    };
+
+                    batch.set(merchantRef, merchantData);
+                    count++;
+                }
+
+                progressEl.innerText = `Writing ${count} merchants to Firestore...`;
                 await batch.commit();
-                document.getElementById('status').innerText = 'SEEDING_COMPLETE';
+
+                statusEl.innerText = '✅ SEEDING_COMPLETE';
+                progressEl.innerHTML = `Successfully added <strong>${count}</strong> merchants!<br>
+                    <br>📍 20 Salons (Hair, Nails, Barbers)
+                    <br>📍 20 Beauty Centers (Aesthetics, Laser, Makeup, Brows/Lashes)
+                    <br><br><a href="/" style="color: #a78bfa;">← Back to Home</a>`;
+
             } catch (e) {
-                document.getElementById('status').innerText = 'ERROR: ' + e.message;
+                statusEl.innerText = '❌ ERROR';
+                progressEl.innerText = e.message;
+                console.error(e);
             }
         }
+
         run();
     </script>
 </body>
+
 </html>
