@@ -1,5 +1,5 @@
 import { db, auth, storage } from "./firebase-config.js";
-import { collection, getDocs, query, where, addDoc, doc, updateDoc, deleteDoc, Timestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { collection, getDocs, query, where, addDoc, doc, updateDoc, deleteDoc, Timestamp, setDoc, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js";
 
 // DOM Elements
@@ -22,6 +22,9 @@ let currentUser = null;
 let map = null;
 let markers = [];
 let infoWindow = null;
+let isPickingLocation = false;
+let pickerMarker = null;
+let pickedLocation = null;
 
 // Initialization
 async function init() {
@@ -74,6 +77,12 @@ function setupEventListeners() {
     if (closeMapBtn) {
         closeMapBtn.onclick = () => {
             mapModal.style.display = 'none';
+            // Reset Pick State
+            isPickingLocation = false;
+            if (pickerMarker) pickerMarker.setMap(null);
+            document.getElementById('btn-confirm-location').style.display = 'none';
+            const header = document.querySelector('.map-header h2');
+            if (header) header.innerText = '📍 Explore Stores in Erbil';
         };
     }
 
@@ -245,6 +254,28 @@ function initMap() {
     });
 
     infoWindow = new google.maps.InfoWindow();
+
+    // Map Click Listener for Pinning
+    map.addListener('click', (e) => {
+        if (isPickingLocation) {
+            pickedLocation = e.latLng;
+
+            if (pickerMarker) pickerMarker.setMap(null);
+
+            pickerMarker = new google.maps.Marker({
+                position: e.latLng,
+                map: map,
+                title: "Selected Location",
+                draggable: true,
+                animation: google.maps.Animation.DROP
+            });
+
+            // Allow dragging to adjust
+            pickerMarker.addListener('dragend', (evt) => {
+                pickedLocation = evt.latLng;
+            });
+        }
+    });
 
     addMarkersToMap();
 }
@@ -446,6 +477,7 @@ window.addEventListener('DOMContentLoaded', () => {
             if (tab.dataset.tab === 'stores') loadAdminStores();
             if (tab.dataset.tab === 'offers') loadAdminOffers();
             if (tab.dataset.tab === 'sponsors') loadAdminSponsors();
+            if (tab.dataset.tab === 'financials') loadFinancials();
         });
     });
 });
@@ -500,6 +532,15 @@ window.openCreateStoreModal = function () {
     preview.style.display = 'none';
     document.getElementById('store-photo').value = '';
 
+    // Explicitly clear manual coords
+    const latEl = document.getElementById('store-lat');
+    const lngEl = document.getElementById('store-lng');
+    if (latEl) latEl.value = '';
+    if (lngEl) lngEl.value = '';
+
+    // Clear services list to prevent stale data
+    document.getElementById('services-sortable-list').innerHTML = '';
+
     // Hide services section for new stores
     document.getElementById('services-reorder-section').style.display = 'none';
 
@@ -515,8 +556,12 @@ window.editStore = function (id) {
     document.getElementById('store-id').value = id;
     document.getElementById('store-name').value = store.name;
     document.getElementById('store-type').value = store.type;
-    document.getElementById('store-category').value = store.category;
     document.getElementById('store-address').value = store.address || '';
+
+    const latEl = document.getElementById('store-lat');
+    const lngEl = document.getElementById('store-lng');
+    if (latEl) latEl.value = store.lat || '';
+    if (lngEl) lngEl.value = store.lng || '';
 
     // Update preview + hidden input
     document.getElementById('store-photo').value = store.photoUrl || '';
@@ -534,6 +579,70 @@ window.editStore = function (id) {
     renderServicesForReorder(store.services || []);
 
     document.getElementById('store-modal').style.display = 'flex';
+};
+
+// Open Map for Location Picking
+window.openLocationPicker = function () {
+    isPickingLocation = true;
+    pickedLocation = null;
+    if (pickerMarker) pickerMarker.setMap(null);
+
+    // Show map
+    document.getElementById('map-modal').style.display = 'flex';
+    if (!map) {
+        initMap();
+    } else {
+        // If editing existing store with coords, center there?
+        const latInput = document.getElementById('store-lat');
+        const lngInput = document.getElementById('store-lng');
+        const currentLat = latInput ? parseFloat(latInput.value) : null;
+        const currentLng = lngInput ? parseFloat(lngInput.value) : null;
+
+        if (currentLat && currentLng) {
+            const pos = { lat: currentLat, lng: currentLng };
+            map.setCenter(pos);
+            map.setZoom(15);
+            // Also place the picker marker there initially
+            pickerMarker = new google.maps.Marker({
+                position: pos,
+                map: map,
+                title: "Current Location",
+                draggable: true,
+                animation: google.maps.Animation.DROP
+            });
+            pickedLocation = new google.maps.LatLng(currentLat, currentLng);
+            pickerMarker.addListener('dragend', (evt) => {
+                pickedLocation = evt.latLng;
+            });
+        }
+    }
+
+    // UI Updates
+    document.getElementById('btn-confirm-location').style.display = 'inline-block';
+    const header = document.querySelector('.map-header h2');
+    if (header) {
+        header.dataset.originalText = header.innerText;
+        header.innerText = '📍 Click on Map to Select Location';
+    }
+};
+
+// Confirm Location Selection
+window.confirmLocationSelection = function () {
+    if (!pickedLocation) {
+        alert('Please click on the map to select a location first.');
+        return;
+    }
+
+    const latEl = document.getElementById('store-lat');
+    const lngEl = document.getElementById('store-lng');
+    if (latEl && lngEl) {
+        latEl.value = pickedLocation.lat().toFixed(6);
+        lngEl.value = pickedLocation.lng().toFixed(6);
+    }
+
+    // Low-level close interaction to ensure reset logic (attached to close button) runs
+    const closeBtn = document.querySelector('.close-map');
+    if (closeBtn) closeBtn.click();
 };
 
 // File input preview listener
@@ -858,11 +967,16 @@ document.getElementById('store-form')?.addEventListener('submit', async (e) => {
             photoUrl = await uploadImage(file, path);
         }
 
+        const latEl = document.getElementById('store-lat');
+        const lngEl = document.getElementById('store-lng');
+
         const storeData = {
             name: document.getElementById('store-name').value,
             type: document.getElementById('store-type').value,
             category: document.getElementById('store-category').value,
             address: document.getElementById('store-address').value,
+            lat: latEl ? (parseFloat(latEl.value) || null) : null,
+            lng: lngEl ? (parseFloat(lngEl.value) || null) : null,
             photoUrl: photoUrl
         };
 
@@ -879,30 +993,19 @@ document.getElementById('store-form')?.addEventListener('submit', async (e) => {
                 });
             });
             storeData.services = services;
-        } else if (!id) {
-            // New store default services
-            storeData.services = [
-                { name: 'Consultation', price: 15000, duration: 30 },
-                { name: 'Basic Service', price: 25000, duration: 45 },
-                { name: 'Premium Service', price: 45000, duration: 60 }
-            ];
+        } else {
+            // No services by default - Manual entry required
+            storeData.services = [];
         }
 
         if (id) {
             // Update existing store
-            storeData.suspended = false; // Ensure it doesn't get accidentally archived if that field is missing
-            // We usually don't overwrite rating/location here unless fields existed, keeping existing values
-            // But updateDoc only updates specified fields.
-            // Wait, the previous code re-generated random rating/location for edits? No, only for new.
-            // My code above for `storeData` only includes the form fields. 
-            // That's correct for update. Firestore `updateDoc` merges.
+            storeData.suspended = false;
             await updateDoc(doc(db, "merchants", id), storeData);
         } else {
             // Create New Store
-            storeData.rating = Math.round((Math.random() * 2 + 3) * 10) / 10;
-            storeData.distance = `${Math.floor(Math.random() * 15 + 1)} km`;
-            storeData.lat = 36.19 + (Math.random() * 0.05);
-            storeData.lng = 44.01 + (Math.random() * 0.04);
+            storeData.rating = 5.0; // Default rating for new stores
+            storeData.distance = '0 km'; // Placeholder until real geo-calc is implemented
             storeData.suspended = false;
             await addDoc(collection(db, "merchants"), storeData);
         }
@@ -1218,6 +1321,541 @@ async function loadMerchantsWithSponsors() {
     await originalLoadMerchants.call(this);
     loadSponsorsForCustomer();
 }
+
+// ========== FINANCIALS SECTION ==========
+let allBookings = [];
+let currentFinancialFilter = 'all';
+
+// Sample booking data for demo purposes
+function generateSampleBookings() {
+    const stores = allMerchants.slice(0, 10);
+    const services = ['Haircut & Style', 'Full Hair Coloring', 'Manicure & Pedicure', 'Premium Shave', 'Facial Treatment', 'Massage Therapy', 'Brow Threading', 'Lash Extensions'];
+    const statuses = ['completed', 'completed', 'completed', 'pending'];
+
+    const bookings = [];
+    const now = new Date();
+
+    for (let i = 0; i < 25; i++) {
+        const store = stores[i % stores.length];
+        if (!store) continue;
+
+        const daysAgo = Math.floor(Math.random() * 45);
+        const bookingDate = new Date(now);
+        bookingDate.setDate(bookingDate.getDate() - daysAgo);
+
+        const price = [15000, 25000, 35000, 45000, 60000, 75000][Math.floor(Math.random() * 6)];
+        const status = statuses[Math.floor(Math.random() * statuses.length)];
+
+        bookings.push({
+            id: `booking-${i}`,
+            storeId: store.id,
+            storeName: store.name,
+            serviceName: services[Math.floor(Math.random() * services.length)],
+            servicePrice: price,
+            customerName: ['Ahmed', 'Sara', 'Omar', 'Layla', 'Hassan', 'Noor'][Math.floor(Math.random() * 6)],
+            bookingDate: bookingDate,
+            status: status,
+            paymentStatus: status === 'completed' ? 'paid' : 'pending',
+            commission: Math.round(price * 0.1)
+        });
+    }
+
+    return bookings.sort((a, b) => b.bookingDate - a.bookingDate);
+}
+
+// Load Financials
+async function loadFinancials(filter = currentFinancialFilter) {
+    currentFinancialFilter = filter;
+
+    // Load invoices from Firestore
+    await loadInvoicesFromFirestore();
+
+    // Generate sample data if not already loaded
+    if (allBookings.length === 0) {
+        allBookings = generateSampleBookings();
+    }
+
+    // Populate store selector for invoice generation
+    const storeSelect = document.getElementById('invoice-store-select');
+    if (storeSelect && storeSelect.options.length <= 1) {
+        const storeNames = [...new Set(allBookings.map(b => b.storeName))];
+        storeNames.forEach(name => {
+            const opt = document.createElement('option');
+            opt.value = name;
+            opt.textContent = name;
+            storeSelect.appendChild(opt);
+        });
+    }
+
+    // Set default dates for invoice generation (start of month to today)
+    const startDateInput = document.getElementById('invoice-start-date');
+    const endDateInput = document.getElementById('invoice-end-date');
+    if (startDateInput && !startDateInput.value) {
+        const now = new Date();
+        const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+        startDateInput.value = firstOfMonth.toISOString().split('T')[0];
+        endDateInput.value = now.toISOString().split('T')[0];
+    }
+
+    // Filter by date range
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const weekAgo = new Date(today);
+    weekAgo.setDate(weekAgo.getDate() - 7);
+    const monthAgo = new Date(today);
+    monthAgo.setMonth(monthAgo.getMonth() - 1);
+
+    let filteredBookings = allBookings;
+    if (filter === 'today') {
+        filteredBookings = allBookings.filter(b => b.bookingDate >= today);
+    } else if (filter === 'week') {
+        filteredBookings = allBookings.filter(b => b.bookingDate >= weekAgo);
+    } else if (filter === 'month') {
+        filteredBookings = allBookings.filter(b => b.bookingDate >= monthAgo);
+    }
+
+    // Calculate stats
+    const completedBookings = filteredBookings.filter(b => b.status === 'completed');
+    const pendingBookings = filteredBookings.filter(b => b.status === 'pending');
+
+    const totalRevenue = completedBookings.reduce((sum, b) => sum + b.servicePrice, 0);
+    const totalCommission = completedBookings.reduce((sum, b) => sum + b.commission, 0);
+    const pendingAmount = pendingBookings.reduce((sum, b) => sum + b.commission, 0);
+
+    // This month stats (always from current month)
+    const thisMonthBookings = allBookings.filter(b => {
+        return b.bookingDate.getMonth() === now.getMonth() &&
+            b.bookingDate.getFullYear() === now.getFullYear() &&
+            b.status === 'completed';
+    });
+    const thisMonthCommission = thisMonthBookings.reduce((sum, b) => sum + b.commission, 0);
+
+    // Update stat cards
+    document.getElementById('stat-total-revenue').textContent = totalRevenue.toLocaleString() + ' IQD';
+    document.getElementById('stat-commission').textContent = totalCommission.toLocaleString() + ' IQD';
+    document.getElementById('stat-pending').textContent = pendingAmount.toLocaleString() + ' IQD';
+    document.getElementById('stat-this-month').textContent = thisMonthCommission.toLocaleString() + ' IQD';
+
+    // Update table
+    const tbody = document.getElementById('financials-tbody');
+    if (filteredBookings.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: #888;">No bookings found</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = filteredBookings.slice(0, 15).map((booking, index) => `
+        <tr>
+            <td>${booking.bookingDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</td>
+            <td><strong>${booking.storeName}</strong></td>
+            <td>${booking.serviceName}</td>
+            <td>${booking.servicePrice.toLocaleString()} IQD</td>
+            <td style="color: #059669; font-weight: 600;">${booking.commission.toLocaleString()} IQD</td>
+            <td>
+                <span class="status-badge ${booking.status === 'completed' ? 'paid' : 'pending-payment'}">
+                    ${booking.status === 'completed' ? '✓ Paid' : '⏳ Pending'}
+                </span>
+            </td>
+            <td>
+                ${booking.status === 'completed' ?
+            `<button class="action-btn" onclick="viewInvoice(${index})">📄 Invoice</button>` :
+            '-'}
+            </td>
+        </tr>
+    `).join('');
+}
+
+// Invoice storage
+let allInvoices = [];
+let currentInvoiceData = null;
+
+// Load invoices from Firestore
+async function loadInvoicesFromFirestore() {
+    try {
+        const invoicesRef = collection(db, 'invoices');
+        const q = query(invoicesRef, orderBy('createdAt', 'desc'));
+        const snapshot = await getDocs(q);
+
+        allInvoices = snapshot.docs.map(docSnap => {
+            const data = docSnap.data();
+            return {
+                id: data.id,
+                storeName: data.storeName,
+                period: data.period,
+                startDate: new Date(data.startDate),
+                endDate: new Date(data.endDate),
+                serviceCount: data.serviceCount,
+                grossRevenue: data.grossRevenue,
+                commission: data.commission,
+                createdAt: new Date(data.createdAt),
+                isPaid: data.isPaid || false,
+                paidAt: data.paidAt ? new Date(data.paidAt) : null,
+                // Convert booking summaries back to usable format
+                bookings: (data.bookingSummaries || []).map(b => ({
+                    bookingDate: new Date(b.date),
+                    serviceName: b.serviceName,
+                    customerName: b.customerName,
+                    servicePrice: b.servicePrice,
+                    commission: b.commission
+                }))
+            };
+        });
+
+        renderInvoiceLists();
+        console.log(`Loaded ${allInvoices.length} invoices from Firestore`);
+    } catch (error) {
+        console.error('Error loading invoices:', error);
+    }
+}
+
+// Generate Store Invoice (using date range inputs)
+window.generateStoreInvoice = function () {
+    const storeName = document.getElementById('invoice-store-select').value;
+    const startDateInput = document.getElementById('invoice-start-date').value;
+    const endDateInput = document.getElementById('invoice-end-date').value;
+
+    if (!storeName) {
+        alert('Please select a store');
+        return;
+    }
+
+    if (!startDateInput || !endDateInput) {
+        alert('Please select both start and end dates');
+        return;
+    }
+
+    const startDate = new Date(startDateInput);
+    const endDate = new Date(endDateInput);
+    endDate.setHours(23, 59, 59); // Include full end day
+
+    if (startDate > endDate) {
+        alert('Start date must be before end date');
+        return;
+    }
+
+    const periodLabel = `${startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
+
+    // Filter bookings for this store in the period
+    const storeBookings = allBookings.filter(b =>
+        b.storeName === storeName &&
+        b.status === 'completed' &&
+        b.bookingDate >= startDate &&
+        b.bookingDate <= endDate
+    );
+
+    if (storeBookings.length === 0) {
+        alert('No completed bookings found for this store in the selected period.');
+        return;
+    }
+
+    // Calculate totals
+    const grossRevenue = storeBookings.reduce((sum, b) => sum + b.servicePrice, 0);
+    const totalCommission = storeBookings.reduce((sum, b) => sum + b.commission, 0);
+    const now = new Date();
+
+    // Generate invoice number
+    const invoiceNum = `INV-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(allInvoices.length + 1).padStart(3, '0')}`;
+
+    // Store current invoice data for saving
+    currentInvoiceData = {
+        id: invoiceNum,
+        storeName: storeName,
+        period: periodLabel,
+        startDate: startDate,
+        endDate: endDate,
+        serviceCount: storeBookings.length,
+        grossRevenue: grossRevenue,
+        commission: totalCommission,
+        createdAt: now,
+        isPaid: false,
+        bookings: storeBookings
+    };
+
+    // Populate invoice modal
+    document.getElementById('invoice-number').textContent = `#${invoiceNum}`;
+    document.getElementById('invoice-store-name').textContent = storeName;
+    document.getElementById('invoice-store-address').textContent = 'Erbil, Kurdistan Region, Iraq';
+    document.getElementById('invoice-period').textContent = `Period: ${periodLabel}`;
+
+    // Service items
+    document.getElementById('invoice-items').innerHTML = storeBookings.map(b => `
+        <tr>
+            <td>${b.bookingDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</td>
+            <td>${b.serviceName}</td>
+            <td>${b.customerName}</td>
+            <td>${b.servicePrice.toLocaleString()} IQD</td>
+            <td style="color: var(--primary); font-weight: 500;">${b.commission.toLocaleString()} IQD</td>
+        </tr>
+    `).join('');
+
+    // Totals
+    document.getElementById('invoice-service-count').textContent = storeBookings.length;
+    document.getElementById('invoice-gross').textContent = grossRevenue.toLocaleString() + ' IQD';
+    document.getElementById('invoice-commission').textContent = totalCommission.toLocaleString() + ' IQD';
+    document.getElementById('invoice-total').textContent = totalCommission.toLocaleString() + ' IQD';
+    document.getElementById('invoice-generated-date').textContent = now.toLocaleDateString('en-US', {
+        year: 'numeric', month: 'long', day: 'numeric'
+    });
+
+    // Hide PAID stamp initially
+    document.getElementById('invoice-stamp').style.display = 'none';
+
+    // Reset buttons for new invoice
+    const btnMarkPaid = document.getElementById('btn-mark-paid');
+    const btnSave = document.getElementById('btn-save-invoice');
+
+    if (btnSave) btnSave.style.display = 'inline-block';
+    if (btnMarkPaid) btnMarkPaid.style.display = 'inline-block';
+
+    // Show modal
+    document.getElementById('invoice-modal').style.display = 'flex';
+};
+
+// Save current invoice to Firestore
+window.saveInvoice = async function () {
+    if (!currentInvoiceData) return;
+
+    try {
+        // Convert for Firestore storage (no Date objects directly, store booking info as simplified array)
+        const invoiceForFirestore = {
+            id: currentInvoiceData.id,
+            storeName: currentInvoiceData.storeName,
+            period: currentInvoiceData.period,
+            startDate: currentInvoiceData.startDate.toISOString(),
+            endDate: currentInvoiceData.endDate.toISOString(),
+            serviceCount: currentInvoiceData.serviceCount,
+            grossRevenue: currentInvoiceData.grossRevenue,
+            commission: currentInvoiceData.commission,
+            createdAt: new Date().toISOString(),
+            isPaid: false,
+            // Store booking summaries (not full objects)
+            bookingSummaries: currentInvoiceData.bookings.map(b => ({
+                date: b.bookingDate.toISOString(),
+                serviceName: b.serviceName,
+                customerName: b.customerName,
+                servicePrice: b.servicePrice,
+                commission: b.commission
+            }))
+        };
+
+        // Save to Firestore using modular syntax
+        const invoiceDocRef = doc(db, 'invoices', currentInvoiceData.id);
+        await setDoc(invoiceDocRef, invoiceForFirestore);
+
+        // Add to local array for immediate display
+        allInvoices.push({ ...currentInvoiceData });
+
+        renderInvoiceLists();
+        closeModal('invoice-modal');
+        alert('Invoice saved to database!');
+    } catch (error) {
+        console.error('Error saving invoice:', error);
+        alert('Error saving invoice: ' + error.message);
+    }
+};
+
+// Mark Invoice as Paid (updates Firestore)
+window.markInvoicePaid = async function () {
+    if (!currentInvoiceData) return;
+
+    try {
+        // Update in Firestore using modular syntax
+        const invoiceDocRef = doc(db, 'invoices', currentInvoiceData.id);
+        await updateDoc(invoiceDocRef, {
+            isPaid: true,
+            paidAt: new Date().toISOString()
+        });
+
+        currentInvoiceData.isPaid = true;
+
+        // Update in local array
+        const existingIndex = allInvoices.findIndex(inv => inv.id === currentInvoiceData.id);
+        if (existingIndex >= 0) {
+            allInvoices[existingIndex].isPaid = true;
+        } else {
+            allInvoices.push({ ...currentInvoiceData });
+        }
+
+        document.getElementById('invoice-stamp').style.display = 'block';
+        if (document.getElementById('btn-mark-paid')) {
+            document.getElementById('btn-mark-paid').style.display = 'none';
+        }
+        renderInvoiceLists();
+        alert('Invoice marked as paid!');
+    } catch (error) {
+        console.error('Error marking invoice as paid:', error);
+        alert('Error updating invoice: ' + error.message);
+    }
+};
+
+// Render invoice lists
+function renderInvoiceLists() {
+    const unpaidList = document.getElementById('unpaid-invoices-list');
+    const paidList = document.getElementById('paid-invoices-list');
+
+    const unpaidInvoices = allInvoices.filter(inv => !inv.isPaid);
+    const paidInvoices = allInvoices.filter(inv => inv.isPaid);
+
+    if (unpaidInvoices.length === 0) {
+        unpaidList.innerHTML = '<div class="empty-state">No unpaid invoices</div>';
+    } else {
+        unpaidList.innerHTML = unpaidInvoices.map(inv => `
+            <div class="invoice-card">
+                <div class="invoice-card-info">
+                    <h4>${inv.storeName}</h4>
+                    <p>${inv.period} • ${inv.serviceCount} services</p>
+                </div>
+                <div class="invoice-card-amount">
+                    <div class="amount">${inv.commission.toLocaleString()} IQD</div>
+                    <div class="date">${inv.createdAt.toLocaleDateString()}</div>
+                </div>
+                <div class="invoice-card-actions">
+                    <button class="action-btn" onclick="viewSavedInvoice('${inv.id}')">View</button>
+                    <button class="action-btn" onclick="markInvoicePaidById('${inv.id}')">✓ Paid</button>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    if (paidInvoices.length === 0) {
+        paidList.innerHTML = '<div class="empty-state">No paid invoices yet</div>';
+    } else {
+        paidList.innerHTML = paidInvoices.map(inv => `
+            <div class="invoice-card">
+                <div class="invoice-card-info">
+                    <h4>${inv.storeName}</h4>
+                    <p>${inv.period} • ${inv.serviceCount} services</p>
+                </div>
+                <div class="invoice-card-amount">
+                    <div class="amount" style="color: #059669;">${inv.commission.toLocaleString()} IQD</div>
+                    <div class="date">Paid ${inv.createdAt.toLocaleDateString()}</div>
+                </div>
+                <div class="invoice-card-actions">
+                    <button class="action-btn" onclick="viewSavedInvoice('${inv.id}')">View</button>
+                </div>
+            </div>
+        `).join('');
+    }
+}
+
+// View saved invoice
+window.viewSavedInvoice = function (invoiceId) {
+    const invoice = allInvoices.find(inv => inv.id === invoiceId);
+    if (!invoice) return;
+
+    currentInvoiceData = invoice;
+
+    document.getElementById('invoice-number').textContent = `#${invoice.id}`;
+    document.getElementById('invoice-store-name').textContent = invoice.storeName;
+    document.getElementById('invoice-store-address').textContent = 'Erbil, Kurdistan Region, Iraq';
+    document.getElementById('invoice-period').textContent = `Period: ${invoice.period}`;
+
+    document.getElementById('invoice-items').innerHTML = invoice.bookings.map(b => `
+        <tr>
+            <td>${b.bookingDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</td>
+            <td>${b.serviceName}</td>
+            <td>${b.customerName}</td>
+            <td>${b.servicePrice.toLocaleString()} IQD</td>
+            <td style="color: var(--primary); font-weight: 500;">${b.commission.toLocaleString()} IQD</td>
+        </tr>
+    `).join('');
+
+    document.getElementById('invoice-service-count').textContent = invoice.serviceCount;
+    document.getElementById('invoice-gross').textContent = invoice.grossRevenue.toLocaleString() + ' IQD';
+    document.getElementById('invoice-commission').textContent = invoice.commission.toLocaleString() + ' IQD';
+    document.getElementById('invoice-total').textContent = invoice.commission.toLocaleString() + ' IQD';
+    document.getElementById('invoice-generated-date').textContent = invoice.createdAt.toLocaleDateString('en-US', {
+        year: 'numeric', month: 'long', day: 'numeric'
+    });
+
+    document.getElementById('invoice-stamp').style.display = invoice.isPaid ? 'block' : 'none';
+
+    // UI Logic for Buttons
+    const btnMarkPaid = document.getElementById('btn-mark-paid');
+    const btnSave = document.getElementById('btn-save-invoice');
+
+    if (btnSave) btnSave.style.display = 'none'; // Already saved
+
+    if (btnMarkPaid) {
+        btnMarkPaid.style.display = invoice.isPaid ? 'none' : 'inline-block';
+    }
+
+    document.getElementById('invoice-modal').style.display = 'flex';
+};
+
+// Mark invoice as paid by ID (updates Firestore)
+window.markInvoicePaidById = async function (invoiceId) {
+    try {
+        // Update in Firestore using modular syntax
+        const invoiceDocRef = doc(db, 'invoices', invoiceId);
+        await updateDoc(invoiceDocRef, {
+            isPaid: true,
+            paidAt: new Date().toISOString()
+        });
+
+        // Update in local array
+        const invoice = allInvoices.find(inv => inv.id === invoiceId);
+        if (invoice) {
+            invoice.isPaid = true;
+        }
+
+        renderInvoiceLists();
+        alert('Invoice marked as paid!');
+    } catch (error) {
+        console.error('Error marking invoice as paid:', error);
+        alert('Error updating invoice: ' + error.message);
+    }
+};
+
+// View Invoice for individual booking (from table)
+window.viewInvoice = function (bookingIndex) {
+    const filteredBookings = allBookings.filter(b => {
+        if (currentFinancialFilter === 'today') {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            return b.bookingDate >= today;
+        } else if (currentFinancialFilter === 'week') {
+            const weekAgo = new Date();
+            weekAgo.setDate(weekAgo.getDate() - 7);
+            return b.bookingDate >= weekAgo;
+        } else if (currentFinancialFilter === 'month') {
+            const monthAgo = new Date();
+            monthAgo.setMonth(monthAgo.getMonth() - 1);
+            return b.bookingDate >= monthAgo;
+        }
+        return true;
+    });
+
+    const booking = filteredBookings[bookingIndex];
+    if (!booking) return;
+
+    // Use generateStoreInvoice with this booking's store pre-selected
+    document.getElementById('invoice-store-select').value = booking.storeName;
+    document.getElementById('invoice-period-select').value = 'current';
+    generateStoreInvoice();
+};
+
+// Mark Invoice as Paid
+window.markInvoicePaid = function () {
+    document.getElementById('invoice-stamp').style.display = 'block';
+    alert('Invoice marked as paid!');
+};
+
+// Print Invoice
+window.printInvoice = function () {
+    window.print();
+};
+
+// Filter button handlers
+document.addEventListener('DOMContentLoaded', () => {
+    const filterBtns = document.querySelectorAll('.filter-btn');
+    filterBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            filterBtns.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            loadFinancials(btn.dataset.range);
+        });
+    });
+});
 
 // Start
 init();

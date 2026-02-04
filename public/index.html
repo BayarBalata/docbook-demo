@@ -116,6 +116,7 @@
                 <button class="admin-tab active" data-tab="stores">🏪 Stores</button>
                 <button class="admin-tab" data-tab="offers">🎁 Offers</button>
                 <button class="admin-tab" data-tab="sponsors">📰 Sponsors</button>
+                <button class="admin-tab" data-tab="financials">💰 Financials</button>
             </div>
 
             <!-- STORES TAB -->
@@ -196,6 +197,107 @@
                     </div>
                 </div>
             </div>
+
+            <!-- FINANCIALS TAB -->
+            <div id="admin-financials" class="admin-panel" style="display: none;">
+                <div class="panel-header">
+                    <h2>💰 Financial Overview</h2>
+                    <div class="financial-filters">
+                        <button class="filter-btn active" data-range="today">Today</button>
+                        <button class="filter-btn" data-range="week">This Week</button>
+                        <button class="filter-btn" data-range="month">This Month</button>
+                        <button class="filter-btn" data-range="all">All Time</button>
+                    </div>
+                </div>
+
+                <!-- Stats Cards -->
+                <div class="financial-stats">
+                    <div class="financial-stat-card">
+                        <span class="stat-label">Total Revenue</span>
+                        <span class="stat-value" id="stat-total-revenue">0 IQD</span>
+                        <span class="stat-trend up">↑ All completed bookings</span>
+                    </div>
+                    <div class="financial-stat-card highlight">
+                        <span class="stat-label">Commission Earned (10%)</span>
+                        <span class="stat-value" id="stat-commission">0 IQD</span>
+                        <span class="stat-trend">Your platform earnings</span>
+                    </div>
+                    <div class="financial-stat-card warning">
+                        <span class="stat-label">Pending Payouts</span>
+                        <span class="stat-value" id="stat-pending">0 IQD</span>
+                        <span class="stat-trend">Awaiting completion</span>
+                    </div>
+                    <div class="financial-stat-card">
+                        <span class="stat-label">This Month</span>
+                        <span class="stat-value" id="stat-this-month">0 IQD</span>
+                        <span class="stat-trend">Commission this month</span>
+                    </div>
+                </div>
+
+                <!-- Invoice Generation -->
+                <div class="invoice-generator">
+                    <h3>📄 Generate Commission Invoice</h3>
+                    <div class="invoice-controls">
+                        <div class="form-group">
+                            <label>Select Store</label>
+                            <select id="invoice-store-select">
+                                <option value="">-- Select a Store --</option>
+                                <!-- Populated via JS -->
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>From Date</label>
+                            <input type="date" id="invoice-start-date">
+                        </div>
+                        <div class="form-group">
+                            <label>To Date</label>
+                            <input type="date" id="invoice-end-date">
+                        </div>
+                        <button class="btn-primary" onclick="generateStoreInvoice()">Generate Invoice</button>
+                    </div>
+                </div>
+
+                <!-- Unpaid Invoices Section -->
+                <div class="invoices-section">
+                    <h3>⏳ Unpaid Invoices</h3>
+                    <p class="section-desc">Pending commission payments from stores</p>
+                    <div id="unpaid-invoices-list" class="invoices-list">
+                        <!-- Populated via JS -->
+                        <div class="empty-state">No unpaid invoices</div>
+                    </div>
+                </div>
+
+                <!-- Paid Invoices Section -->
+                <div class="invoices-section paid">
+                    <h3>✅ Paid Invoices</h3>
+                    <p class="section-desc">Completed commission payments - no action required</p>
+                    <div id="paid-invoices-list" class="invoices-list">
+                        <!-- Populated via JS -->
+                        <div class="empty-state">No paid invoices yet</div>
+                    </div>
+                </div>
+
+                <!-- Bookings Table -->
+                <div class="admin-table-container">
+                    <h3>Recent Completed Bookings</h3>
+                    <table class="admin-table" id="financials-table">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Store</th>
+                                <th>Service</th>
+                                <th>Amount</th>
+                                <th>Commission (10%)</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="financials-tbody">
+                            <!-- Loaded via JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
     </main>
 
@@ -243,6 +345,8 @@
         <div class="map-modal-content">
             <div class="map-header">
                 <h2>📍 Explore Stores in Erbil</h2>
+                <button id="btn-confirm-location" class="btn-primary" style="display: none; margin-left: 10px;"
+                    onclick="confirmLocationSelection()">✅ Select This Location</button>
                 <span class="close-map">&times;</span>
             </div>
             <div id="map-container"></div>
@@ -285,6 +389,20 @@
                 <div class="form-group">
                     <label>Address</label>
                     <input type="text" id="store-address" required placeholder="e.g. Ankawa, Erbil">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Latitude</label>
+                        <input type="number" id="store-lat" step="any" placeholder="e.g. 36.1901">
+                    </div>
+                    <div class="form-group">
+                        <label>Longitude</label>
+                        <input type="number" id="store-lng" step="any" placeholder="e.g. 44.0102">
+                    </div>
+                    <div class="form-group" style="display: flex; align-items: flex-end;">
+                        <button type="button" class="btn-secondary" onclick="openLocationPicker()"
+                            style="margin-bottom: 2px;">📍 Pin on Map</button>
+                    </div>
                 </div>
                 <div class="form-group">
                     <label>Store Photo</label>
@@ -416,6 +534,89 @@
                 </div>
                 <button type="submit" class="btn-primary full-width">Save Service</button>
             </form>
+        </div>
+    </div>
+
+    <!-- INVOICE MODAL -->
+    <div id="invoice-modal" class="modal">
+        <div class="modal-content invoice-modal">
+            <span class="close-modal" onclick="closeModal('invoice-modal')">&times;</span>
+            <div id="invoice-content" class="invoice">
+                <div class="invoice-header">
+                    <div class="invoice-logo">
+                        <h1>📅 DocBook</h1>
+                        <p>Beauty & Wellness Platform</p>
+                    </div>
+                    <div class="invoice-title">
+                        <h2>COMMISSION INVOICE</h2>
+                        <p id="invoice-number">#INV-000001</p>
+                    </div>
+                </div>
+
+                <div class="invoice-meta">
+                    <div class="invoice-from">
+                        <strong>From:</strong>
+                        <p>DocBook Platform</p>
+                        <p>Erbil, Kurdistan Region, Iraq</p>
+                        <p>info@docbook.iq</p>
+                    </div>
+                    <div class="invoice-to">
+                        <strong>Bill To:</strong>
+                        <p id="invoice-store-name">Store Name</p>
+                        <p id="invoice-store-address">Store Address</p>
+                        <p id="invoice-period">Period: January 2026</p>
+                    </div>
+                </div>
+
+                <table class="invoice-table">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Service</th>
+                            <th>Customer</th>
+                            <th>Service Amount</th>
+                            <th>Commission (10%)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="invoice-items">
+                        <!-- Filled via JS -->
+                    </tbody>
+                </table>
+
+                <div class="invoice-totals">
+                    <div class="invoice-total-row">
+                        <span>Total Services:</span>
+                        <span id="invoice-service-count">0</span>
+                    </div>
+                    <div class="invoice-total-row">
+                        <span>Gross Revenue:</span>
+                        <span id="invoice-gross">0 IQD</span>
+                    </div>
+                    <div class="invoice-total-row commission">
+                        <span>Platform Commission (10%):</span>
+                        <span id="invoice-commission">0 IQD</span>
+                    </div>
+                    <div class="invoice-total-row grand">
+                        <span>Amount Due:</span>
+                        <span id="invoice-total">0 IQD</span>
+                    </div>
+                </div>
+
+                <div class="invoice-paid-stamp" id="invoice-stamp">
+                    ✓ PAID
+                </div>
+
+                <div class="invoice-footer">
+                    <p>Payment due within 30 days of invoice date.</p>
+                    <p class="invoice-note">Generated on <span id="invoice-generated-date"></span></p>
+                </div>
+            </div>
+            <div class="invoice-actions">
+                <button class="btn-primary" onclick="saveInvoice()" id="btn-save-invoice">💾 Save Invoice</button>
+                <button class="btn-primary" onclick="printInvoice()">⬇️ Download / Print</button>
+                <button class="btn-secondary" id="btn-mark-paid" onclick="markInvoicePaid()">✓ Mark as Paid</button>
+                <button class="btn-secondary" onclick="closeModal('invoice-modal')">Close</button>
+            </div>
         </div>
     </div>
 
