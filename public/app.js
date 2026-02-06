@@ -651,7 +651,7 @@ window.confirmRealBooking = async function (storeId, storeName, serviceName, pri
             servicePrice: price,
             serviceDuration: duration,
             bookingDate: new Date(), // Current time for now
-            status: 'completed', // Auto-complete for MVP
+            status: 'pending', // Initial status is pending
             commission: Math.round(price * 0.1),
             createdAt: new Date().toISOString()
         };
@@ -1765,7 +1765,35 @@ async function loadFinancials(filter = currentFinancialFilter) {
         return;
     }
 
-    tbody.innerHTML = filteredBookings.slice(0, 15).map((booking, index) => `
+    // Create a Set of all paid booking IDs for efficient lookup
+    const paidBookingIds = new Set();
+    allInvoices.forEach(inv => {
+        if (inv.isPaid && inv.bookings) {
+            inv.bookings.forEach(b => paidBookingIds.add(b.id || b.bookingId)); // Handle potential schema variations
+        }
+    });
+
+    tbody.innerHTML = filteredBookings.slice(0, 15).map((booking, index) => {
+        const isPaid = paidBookingIds.has(booking.id);
+
+        let statusBadgeClass = '';
+        let statusText = '';
+
+        if (isPaid) {
+            statusBadgeClass = 'paid';
+            statusText = '✓ Paid';
+        } else if (booking.status === 'completed') {
+            statusBadgeClass = 'completed'; // You might need to add this class in CSS if not exists, or use 'paid' style
+            statusText = '🏁 Completed (Unpaid)';
+        } else if (booking.status === 'confirmed') {
+            statusBadgeClass = 'active';
+            statusText = '📅 Confirmed';
+        } else {
+            statusBadgeClass = 'pending-payment';
+            statusText = '⏳ Pending';
+        }
+
+        return `
         <tr>
             <td>${booking.bookingDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</td>
             <td><strong>${booking.storeName}</strong></td>
@@ -1773,17 +1801,17 @@ async function loadFinancials(filter = currentFinancialFilter) {
             <td>${booking.servicePrice.toLocaleString()} IQD</td>
             <td style="color: #059669; font-weight: 600;">${booking.commission.toLocaleString()} IQD</td>
             <td>
-                <span class="status-badge ${booking.status === 'completed' ? 'paid' : 'pending-payment'}">
-                    ${booking.status === 'completed' ? '✓ Paid' : '⏳ Pending'}
+                <span class="status-badge ${statusBadgeClass}">
+                    ${statusText}
                 </span>
             </td>
             <td>
-                ${booking.status === 'completed' ?
-            `<button class="action-btn" onclick="viewInvoice(${index})">📄 Invoice</button>` :
-            '-'}
+                ${booking.status === 'completed' && !isPaid ?
+                `<button class="action-btn" onclick="viewInvoice(${index})">📄 Invoice</button>` :
+                '-'}
             </td>
         </tr>
-    `).join('');
+    `}).join('');
 }
 
 // Invoice storage
@@ -2008,6 +2036,7 @@ window.markInvoicePaid = async function () {
             document.getElementById('btn-mark-paid').style.display = 'none';
         }
         renderInvoiceLists();
+        loadFinancials(); // Refresh main table to show "Paid" status
         showToast('Invoice marked as paid!', 'success');
     } catch (error) {
         console.error('Error marking invoice as paid:', error);
