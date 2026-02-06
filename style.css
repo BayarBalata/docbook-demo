@@ -61,10 +61,13 @@ body.dark-mode {
 }
 
 .dropdown-item:hover {
-    background: rgba(0,0,0,0.05); /* Works for light */
+    background: rgba(0, 0, 0, 0.05);
+    /* Works for light */
 }
+
 body.dark-mode .dropdown-item:hover {
-    background: rgba(255,255,255,0.05); /* Works for dark */
+    background: rgba(255, 255, 255, 0.05);
+    /* Works for dark */
 }
 
 .dropdown-item.danger {
@@ -110,11 +113,11 @@ body.dark-mode .dropdown-item:hover {
     width: 18px;
 }
 
-input:checked + .slider {
+input:checked+.slider {
     background-color: var(--primary);
 }
 
-input:checked + .slider:before {
+input:checked+.slider:before {
     transform: translateX(20px);
 }
 
@@ -127,8 +130,15 @@ input:checked + .slider:before {
 }
 
 @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(-5px); }
-    to { opacity: 1; transform: translateY(0); }
+    from {
+        opacity: 0;
+        transform: translateY(-5px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 * {
@@ -1968,6 +1978,7 @@ input[type="number"] {
         display: none;
     }
 }
+
 /* ========== CUSTOM TOAST NOTIFICATIONS ========== */
 #toast-container {
     position: fixed;
@@ -1983,7 +1994,7 @@ input[type="number"] {
     background: white;
     padding: 16px 24px;
     border-radius: 12px;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
     display: flex;
     align-items: center;
     gap: 12px;
@@ -2006,6 +2017,7 @@ input[type="number"] {
         opacity: 0;
         transform: translateX(50px) scale(0.9);
     }
+
     to {
         opacity: 1;
         transform: translateX(0) scale(1);
@@ -2024,8 +2036,10 @@ input[type="number"] {
 
 /* Toast Variants */
 .toast.success {
-    border-left-color: #10b981; /* Green */
+    border-left-color: #10b981;
+    /* Green */
 }
+
 .toast.success::before {
     content: '✓';
     display: inline-flex;
@@ -2040,8 +2054,10 @@ input[type="number"] {
 }
 
 .toast.error {
-    border-left-color: #ef4444; /* Red */
+    border-left-color: #ef4444;
+    /* Red */
 }
+
 .toast.error::before {
     content: '!';
     display: inline-flex;
@@ -2056,8 +2072,10 @@ input[type="number"] {
 }
 
 .toast.info {
-    border-left-color: var(--primary); /* Purple */
+    border-left-color: var(--primary);
+    /* Purple */
 }
+
 .toast.info::before {
     content: 'i';
     display: inline-flex;
@@ -2094,7 +2112,8 @@ input[type="number"] {
     position: fixed;
     bottom: 20px;
     right: 20px;
-    z-index: 10000; /* Above everything */
+    z-index: 10000;
+    /* Above everything */
     display: flex;
     flex-direction: column;
     gap: 10px;
@@ -2106,7 +2125,7 @@ input[type="number"] {
     color: #fff;
     padding: 12px 20px;
     border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
     font-size: 0.95rem;
     display: flex;
     align-items: center;
@@ -2117,21 +2136,42 @@ input[type="number"] {
     max-width: 350px;
 }
 
-.toast.success { background-color: #059669; border-left: 5px solid #047857; }
-.toast.error { background-color: #dc2626; border-left: 5px solid #b91c1c; }
-.toast.info { background-color: #3b82f6; border-left: 5px solid #2563eb; }
+.toast.success {
+    background-color: #059669;
+    border-left: 5px solid #047857;
+}
+
+.toast.error {
+    background-color: #dc2626;
+    border-left: 5px solid #b91c1c;
+}
+
+.toast.info {
+    background-color: #3b82f6;
+    border-left: 5px solid #2563eb;
+}
 
 .toast.fade-out {
     animation: fadeOut 0.3s ease-in forwards;
 }
 
 @keyframes slideIn {
-    from { opacity: 0; transform: translateX(20px); }
-    to { opacity: 1; transform: translateX(0); }
+    from {
+        opacity: 0;
+        transform: translateX(20px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
 }
 
 @keyframes fadeOut {
-    to { opacity: 0; transform: translateX(20px); }
+    to {
+        opacity: 0;
+        transform: translateX(20px);
+    }
 }
 
 /* Custom Confirmation Modal */
@@ -2153,4 +2193,86 @@ input[type="number"] {
     gap: 10px;
     justify-content: flex-end;
     margin-top: 20px;
+}
+
+/* Calendar Styles */
+.calendar-container {
+    background: var(--surface);
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    padding: 20px;
+    margin-top: 20px;
+}
+
+.calendar-header {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    text-align: center;
+    font-weight: 600;
+    color: var(--text-light);
+    margin-bottom: 10px;
+}
+
+.calendar-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 8px;
+}
+
+.calendar-day {
+    aspect-ratio: 1;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px;
+    cursor: pointer;
+    position: relative;
+    transition: all 0.2s;
+    background: var(--surface);
+    color: var(--text);
+}
+
+.calendar-day:hover {
+    background: var(--background);
+    border-color: var(--text-light);
+}
+
+.calendar-day.active {
+    background: var(--secondary);
+    border-color: var(--primary);
+    color: var(--primary-dark);
+    font-weight: 600;
+}
+
+.calendar-day.has-bookings::after {
+    content: '';
+    position: absolute;
+    bottom: 6px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 6px;
+    height: 6px;
+    background: var(--primary);
+    border-radius: 50%;
+}
+
+.calendar-controls {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+.calendar-controls button {
+    padding: 6px 12px;
+}
+
+.booking-detail-item {
+    padding: 12px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.booking-detail-item:last-child {
+    border-bottom: none;
 }
