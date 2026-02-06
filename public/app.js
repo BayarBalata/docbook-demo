@@ -2429,7 +2429,8 @@ window.loadOwnerDashboard = async function () {
 
             if (tab.dataset.tab === 'overview') loadOwnerOverview();
             if (tab.dataset.tab === 'bookings') loadOwnerBookings('all');
-            if (tab.dataset.tab === 'mystore') loadOwnerStore();
+            if (tab.dataset.tab === 'calendar') loadOwnerCalendar();
+            if (tab.dataset.tab === 'store') loadOwnerStore();
             if (tab.dataset.tab === 'financials') loadOwnerFinancials();
         });
     });
@@ -2508,6 +2509,7 @@ async function loadOwnerOverview() {
 
 // 2. Bookings Tab
 let currentBookingFilter = 'all';
+
 window.filterOwnerBookings = function (status) {
     currentBookingFilter = status;
     const btns = document.querySelectorAll('#owner-bookings .filter-btn');
@@ -2526,7 +2528,7 @@ async function loadOwnerBookings(status) {
     tbody.innerHTML = '<tr><td colspan="6">Loading...</td></tr>';
 
     try {
-        const q = query(collection(db, "bookings"), where("merchantId", "==", currentUser.storeId), orderBy("createdAt", "desc"));
+        const q = query(collection(db, "bookings"), where("storeId", "==", currentUser.storeId), orderBy("createdAt", "desc"));
         const snapshot = await getDocs(q); // In real app, might need composite index
         let bookings = [];
         snapshot.forEach(d => bookings.push({ id: d.id, ...d.data() }));
@@ -2569,25 +2571,108 @@ async function loadOwnerBookings(status) {
     }
 }
 
-// Global action for booking status
-window.updateBookingStatus = async function (id, status) {
+// 2b. Calendar Tab
+let currentCalendarDate = new Date();
+
+async function loadOwnerCalendar() {
+    const storeId = currentUser.storeId;
+    if (!storeId) return;
+
     try {
-        await updateDoc(doc(db, "bookings", id), { status: status });
-        // Refresh views
-        loadOwnerOverview(); // Update stats
-        if (document.getElementById('owner-bookings').style.display !== 'none') {
-            loadOwnerBookings(currentBookingFilter);
-        }
-        showToast(`Booking marked as ${status}`, 'success');
+        const q = query(collection(db, "bookings"), where("storeId", "==", storeId));
+        const snapshot = await getDocs(q);
+        const bookings = [];
+        snapshot.forEach(d => bookings.push({ id: d.id, ...d.data() }));
+
+        renderOwnerCalendar(bookings);
     } catch (e) {
-        console.error(e);
-        showToast('Failed to update status', 'error');
+        console.error("Error loading calendar:", e);
     }
+}
+
+function renderOwnerCalendar(bookings) {
+    const grid = document.getElementById('owner-calendar-grid');
+    grid.innerHTML = '';
+
+    const year = currentCalendarDate.getFullYear();
+    const month = currentCalendarDate.getMonth();
+
+    // Update Header
+    document.getElementById('calendar-month-year').innerText = new Date(year, month).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
+    const firstDay = new Date(year, month, 1).getDay();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+    // Empty cells for previous month
+    for (let i = 0; i < firstDay; i++) {
+        const emptyCell = document.createElement('div');
+        grid.appendChild(emptyCell);
+    }
+
+    // Days
+    for (let i = 1; i <= daysInMonth; i++) {
+        const dayDate = new Date(year, month, i);
+        const dateString = dayDate.toDateString();
+
+        const dayCell = document.createElement('div');
+        dayCell.className = 'calendar-day';
+        dayCell.innerText = i;
+
+        // Check for bookings
+        const dayBookings = bookings.filter(b => {
+            if (!b.bookingDate) return false;
+            // Handle Firestore Timestamp or Date object
+            const bDate = b.bookingDate.toDate ? b.bookingDate.toDate() : new Date(b.bookingDate);
+            return bDate.toDateString() === dateString;
+        });
+
+        if (dayBookings.length > 0) {
+            dayCell.classList.add('has-bookings');
+        }
+
+        dayCell.onclick = () => selectCalendarDay(dayCell, dayBookings, dateString);
+        grid.appendChild(dayCell);
+    }
+}
+
+window.changeCalendarMonth = function (offset) {
+    currentCalendarDate.setMonth(currentCalendarDate.getMonth() + offset);
+    loadOwnerCalendar();
+}
+
+function selectCalendarDay(element, bookings, dateString) {
+    // UI Active State
+    document.querySelectorAll('.calendar-day').forEach(d => d.classList.remove('active'));
+    element.classList.add('active');
+
+    // Show Details
+    const detailsContainer = document.getElementById('calendar-day-details');
+    const bookingsList = document.getElementById('calendar-day-bookings');
+    document.getElementById('selected-date-header').innerText = `Bookings for ${dateString}`;
+
+    detailsContainer.style.display = 'block';
+
+    if (bookings.length === 0) {
+        bookingsList.innerHTML = '<p style="color: #666;">No bookings for this day.</p>';
+        return;
+    }
+
+    bookingsList.innerHTML = bookings.map(b => `
+        <div class="booking-detail-item">
+            <div>
+                <strong>${b.serviceName}</strong><br>
+                <span style="font-size: 0.9rem; color: #666;">${b.customerName}</span>
+                <div style="font-size: 0.8rem; color: #888;">${new Date(b.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+            </div>
+            <span class="status-badge ${b.status}">${b.status}</span>
+        </div>
+    `).join('');
 }
 
 // 3. My Store Tab
 async function loadOwnerStore() {
     const store = allMerchants.find(m => m.id === currentUser.storeId);
+
     if (!store) return;
 
     // Populate Form

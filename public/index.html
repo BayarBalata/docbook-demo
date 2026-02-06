@@ -104,8 +104,9 @@
             <!-- Owner Tabs -->
             <div class="admin-tabs">
                 <button class="owner-tab active" data-tab="overview">📊 Overview</button>
-                <button class="owner-tab" data-tab="bookings">📅 Bookings</button>
-                <button class="owner-tab" data-tab="mystore">🏪 My Store</button>
+                <button class="owner-tab" data-tab="bookings">Bookings</button>
+                <button class="owner-tab" data-tab="calendar">Calendar</button>
+                <button class="owner-tab" data-tab="store">My Store</button>
                 <button class="owner-tab" data-tab="financials">💰 Financials</button>
             </div>
 
@@ -167,8 +168,44 @@
                 </div>
             </div>
 
+            <!-- OWNER CALENDAR TAB -->
+            <div id="owner-calendar" class="owner-panel" style="display: none;">
+                <div class="panel-header">
+                    <h2>Schedule & Availability</h2>
+                    <div class="calendar-controls">
+                        <button class="btn-outline" onclick="changeCalendarMonth(-1)">◀ Prev</button>
+                        <span id="calendar-month-year" style="font-weight: 600; font-size: 1.1rem;">September
+                            2026</span>
+                        <button class="btn-outline" onclick="changeCalendarMonth(1)">Next ▶</button>
+                    </div>
+                </div>
+
+                <div class="calendar-container">
+                    <div class="calendar-header">
+                        <div>Sun</div>
+                        <div>Mon</div>
+                        <div>Tue</div>
+                        <div>Wed</div>
+                        <div>Thu</div>
+                        <div>Fri</div>
+                        <div>Sat</div>
+                    </div>
+                    <div class="calendar-grid" id="owner-calendar-grid">
+                        <!-- Loaded via JS -->
+                    </div>
+                </div>
+
+                <div id="calendar-day-details"
+                    style="margin-top: 20px; display: none; background: white; padding: 15px; border-radius: 12px; border: 1px solid #eee;">
+                    <h3 id="selected-date-header" style="margin-bottom: 15px;">Bookings for Selected Date</h3>
+                    <div id="calendar-day-bookings">
+                        <!-- List of bookings for the selected day -->
+                    </div>
+                </div>
+            </div>
+
             <!-- MY STORE TAB -->
-            <div id="owner-mystore" class="owner-panel" style="display: none;">
+            <div id="owner-store" class="owner-panel" style="display: none;">
                 <div class="panel-header">
                     <h2>Edit Store Details</h2>
                     <button class="btn-primary" onclick="saveOwnerStoreDetails()">💾 Save Changes</button>
