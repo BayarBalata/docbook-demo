@@ -1,6 +1,6 @@
 import { db, auth, storage } from "./firebase-config.js";
 import { collection, getDocs, getDoc, query, where, addDoc, doc, updateDoc, deleteDoc, Timestamp, setDoc, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-import { RecaptchaVerifier, signInWithPhoneNumber } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+import { RecaptchaVerifier, signInWithPhoneNumber, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 import { ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js";
 
 // DOM Elements
@@ -26,6 +26,68 @@ let infoWindow = null;
 let isPickingLocation = false;
 let pickerMarker = null;
 let pickedLocation = null;
+
+// Utility: Custom Toast
+window.showToast = function (message, type = 'info') {
+    const container = document.getElementById('toast-container');
+    if (!container) return;
+
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    toast.textContent = message;
+
+    // Click to dismiss
+    toast.onclick = () => {
+        toast.classList.add('fade-out');
+        setTimeout(() => toast.remove(), 300);
+    };
+
+    container.appendChild(toast);
+
+    // Auto dismiss
+    setTimeout(() => {
+        if (toast.parentElement) {
+            toast.classList.add('fade-out');
+            setTimeout(() => toast.remove(), 300);
+        }
+    }, 4000);
+};
+
+// Utility: Custom Confirm Modal (Promise-based)
+window.showConfirm = function (message) {
+    return new Promise((resolve) => {
+        const modal = document.getElementById('custom-confirm-modal');
+        const msgEl = document.getElementById('confirm-message');
+        const btnOk = document.getElementById('btn-confirm-ok');
+        const btnCancel = document.getElementById('btn-confirm-cancel');
+
+        if (!modal || !msgEl || !btnOk || !btnCancel) {
+            // Fallback if elements missing
+            resolve(confirm(message));
+            return;
+        }
+
+        msgEl.textContent = message;
+        modal.style.display = 'flex';
+
+        // Cleanup function
+        const cleanup = () => {
+            modal.style.display = 'none';
+            btnOk.onclick = null;
+            btnCancel.onclick = null;
+        };
+
+        btnOk.onclick = () => {
+            cleanup();
+            resolve(true);
+        };
+
+        btnCancel.onclick = () => {
+            cleanup();
+            resolve(false);
+        };
+    });
+};
 
 // Initialization
 async function init() {
@@ -153,13 +215,6 @@ function setupEventListeners() {
             document.getElementById('auth-form-register').style.display = 'block';
         } else if (step === 'login') {
             document.getElementById('auth-form-login').style.display = 'block';
-        } else if (step === 'owner') {
-            const select = document.getElementById('auth-store-select');
-            if (select && select.children.length <= 1) {
-                select.innerHTML = '<option value="">-- Select Your Store --</option>' +
-                    allMerchants.map(m => `<option value="${m.id}">${m.name}</option>`).join('');
-            }
-            document.getElementById('auth-form-owner').style.display = 'block';
         } else if (step === 'verify') {
             document.getElementById('auth-form-verify').style.display = 'block';
             document.getElementById('verify-phone-display').innerText = '+964 ' + tempAuthData.phone;
@@ -169,10 +224,6 @@ function setupEventListeners() {
         }
     }
 
-    window.showOwnerLogin = function () {
-        showAuthStep('owner');
-    }
-
     // 3. Register Form Submit
     const regForm = document.getElementById('auth-form-register');
     if (regForm) {
@@ -180,31 +231,37 @@ function setupEventListeners() {
             e.preventDefault();
             const name = document.getElementById('reg-name').value.trim();
             const phone = document.getElementById('reg-phone').value.trim();
+            const password = document.getElementById('reg-password').value;
 
             if (phone.length < 10) {
-                alert('Please enter a valid phone number');
+                showToast('Please enter a valid phone number', 'error');
+                return;
+            }
+            if (password.length < 6) {
+                showToast('Password must be at least 6 characters', 'error');
                 return;
             }
 
             try {
                 const userExists = await checkUserExists(phone);
                 if (userExists) {
-                    alert('This phone number is already registered. Please Sign In.');
+                    showToast('This phone number is already registered. Please Sign In.', 'info');
                     showAuthStep('login');
                     document.getElementById('login-phone').value = phone;
                     return;
                 }
                 // Proceed to verify
                 const appVerifier = window.recaptchaVerifier;
+                // OTP Step is ONLY for registration
                 signInWithPhoneNumber(auth, '+964' + phone, appVerifier)
                     .then((confirmationResult) => {
                         window.confirmationResult = confirmationResult;
-                        tempAuthData = { type: 'register', name, phone };
+                        tempAuthData = { type: 'register', name, phone, password };
                         showAuthStep('verify');
-                        alert('Verification code sent!');
+                        showToast('Verification code sent!', 'success');
                     }).catch((error) => {
                         console.error("SMS Error:", error);
-                        alert("Error sending SMS: " + error.message);
+                        showToast("Error sending SMS: " + error.message, 'error');
                         window.recaptchaVerifier.render().then(function (widgetId) {
                             grecaptcha.reset(widgetId);
                         });
@@ -212,80 +269,56 @@ function setupEventListeners() {
 
             } catch (error) {
                 console.error("Auth Error:", error);
-                alert("Error checking user. Please try again.");
+                showToast("Error checking user. Please try again.", 'error');
             }
         };
     }
 
-    // 4. Login Form Submit
+    // 4. Login Form Submit (Password Based)
     const loginForm = document.getElementById('auth-form-login');
     if (loginForm) {
         loginForm.onsubmit = async (e) => {
             e.preventDefault();
             const phone = document.getElementById('login-phone').value.trim();
+            const password = document.getElementById('login-password').value;
 
             if (phone.length < 10) {
-                alert('Please enter a valid phone number');
+                showToast('Please enter a valid phone number', 'error');
                 return;
             }
 
             try {
-                const userExists = await checkUserExists(phone);
-                if (!userExists) {
-                    if (confirm('No account found with this number. Do you want to create one?')) {
-                        showAuthStep('register');
-                        document.getElementById('reg-phone').value = phone;
-                    }
-                    return;
+                // Login with Dummy Email
+                const email = phone + '@docbook.app';
+                await signInWithEmailAndPassword(auth, email, password);
+
+                // Fetch User Data from Firestore
+                const userDoc = await checkUserExists(phone);
+
+                if (userDoc) {
+                    currentUser = userDoc;
+                    showToast('Welcome back, ' + currentUser.name + '!', 'success');
+                    localStorage.setItem('currentUser', JSON.stringify(currentUser));
+                    updateUIForUser();
+                    authModal.style.display = 'none';
+                } else {
+                    showToast('Account data not found.', 'error');
                 }
-                // Proceed to verify
-                const appVerifier = window.recaptchaVerifier;
-                signInWithPhoneNumber(auth, '+964' + phone, appVerifier)
-                    .then((confirmationResult) => {
-                        window.confirmationResult = confirmationResult;
-                        tempAuthData = { type: 'login', phone, userData: userExists };
-                        showAuthStep('verify');
-                        alert('Verification code sent!');
-                    }).catch((error) => {
-                        console.error("SMS Login Error:", error);
-                        alert("Error sending SMS: " + error.message);
-                    });
+
             } catch (error) {
-                console.error("Auth Error:", error);
-                alert("Error logging in. Please try again.");
-            }
-        }
-    }
-
-    // 5. Owner Form Submit
-    const ownerForm = document.getElementById('auth-form-owner');
-    if (ownerForm) {
-        ownerForm.onsubmit = (e) => {
-            e.preventDefault();
-            const storeId = document.getElementById('auth-store-select').value;
-            const phone = document.getElementById('owner-phone').value;
-
-            if (!storeId) {
-                alert('Please select your store');
-                return;
-            }
-
-            const store = allMerchants.find(m => m.id === storeId);
-            tempAuthData = {
-                type: 'owner',
-                phone: phone,
-                userData: {
-                    role: 'owner',
-                    storeId: storeId,
-                    name: store.name,
-                    phone: phone
+                console.error("Login Error:", error);
+                if (error.code === 'auth/invalid-credential' || error.code === 'auth/wrong-password') {
+                    showToast("Invalid phone number or password.", 'error');
+                } else {
+                    showToast("Error logging in: " + error.message, 'error');
                 }
-            };
-            showAuthStep('verify');
+            }
         }
     }
 
-    // 6. Verification (OTP) Logic
+
+
+    // 6. Verification (OTP) Logic - Registration ONLY
     const verifyForm = document.getElementById('auth-form-verify');
     if (verifyForm) {
         verifyForm.onsubmit = async (e) => {
@@ -293,30 +326,37 @@ function setupEventListeners() {
             const code = document.getElementById('auth-code').value;
 
             if (!window.confirmationResult) {
-                alert('No verification session found. Please try again.');
+                showToast('No verification session found.', 'error');
+                return;
+            }
+
+            if (!tempAuthData || tempAuthData.type !== 'register') {
+                showToast('Invalid session state.', 'error');
                 return;
             }
 
             try {
-                const result = await window.confirmationResult.confirm(code);
-                const user = result.user;
-                // Success!
+                // Verify OTP
+                await window.confirmationResult.confirm(code);
 
-                if (tempAuthData.type === 'register') {
-                    const newUser = {
-                        name: tempAuthData.name,
-                        phone: '+964' + tempAuthData.phone,
-                        role: 'customer',
-                        createdAt: new Date().toISOString()
-                    };
-                    await setDoc(doc(db, "customers", tempAuthData.phone), newUser);
-                    currentUser = newUser;
-                    alert(`Welcome to DocBook, ${newUser.name}!`);
-                } else if (tempAuthData.type === 'login' || tempAuthData.type === 'owner') {
-                    currentUser = tempAuthData.userData;
-                    const welcomeName = currentUser.role === 'owner' ? `Owner of ${currentUser.name}` : currentUser.name;
-                    alert(`Welcome back, ${welcomeName}!`);
-                }
+                // OTP Success - Now create Real Account
+                await signOut(auth); // Sign out of the temporary phone session
+
+                const dummyEmail = tempAuthData.phone + '@docbook.app';
+                await createUserWithEmailAndPassword(auth, dummyEmail, tempAuthData.password);
+
+                // Create Firestore Doc
+                const newUser = {
+                    name: tempAuthData.name,
+                    phone: tempAuthData.phone,
+                    role: 'customer',
+                    createdAt: new Date().toISOString()
+                };
+
+                await setDoc(doc(db, "customers", tempAuthData.phone), newUser);
+
+                currentUser = newUser;
+                showToast(`Welcome to DocBook, ${newUser.name}!`, 'success');
 
                 localStorage.setItem('currentUser', JSON.stringify(currentUser));
                 updateUIForUser();
@@ -324,7 +364,12 @@ function setupEventListeners() {
 
             } catch (error) {
                 console.error("Verification Error:", error);
-                alert("Incorrect code or verification failed. Please try again.");
+                if (error.code === 'auth/email-already-in-use') {
+                    showToast("Account already exists. Please login.", 'error');
+                    showAuthStep('login');
+                } else {
+                    showToast("Verification failed: " + error.message, 'error');
+                }
             }
         };
     }
@@ -635,13 +680,13 @@ window.openMerchantDetails = function (id) {
 
 window.initiateBooking = async function (merchantId, serviceName, price) {
     if (!currentUser) {
-        alert("Please login first to book an appointment.");
+        showToast("Please login first to book an appointment.", 'error');
         bookingModal.style.display = 'none';
         authModal.style.display = 'flex';
         return;
     }
 
-    if (confirm(`Confirm booking for ${serviceName} ($${price})?`)) {
+    if (await showConfirm(`Confirm booking for ${serviceName} ($${price})?`)) {
         try {
             await addDoc(collection(db, "bookings"), {
                 merchantId,
@@ -652,11 +697,11 @@ window.initiateBooking = async function (merchantId, serviceName, price) {
                 status: 'pending',
                 createdAt: new Date()
             });
-            alert("Booking request sent! The owner will confirm shortly.");
+            showToast("Booking request sent! The owner will confirm shortly.", 'success');
             bookingModal.style.display = 'none';
         } catch (e) {
             console.error("Error booking:", e);
-            alert("Failed to book. Try again.");
+            showToast("Failed to book. Try again.", 'error');
         }
     }
 }
@@ -683,6 +728,7 @@ window.addEventListener('DOMContentLoaded', () => {
             if (tab.dataset.tab === 'offers') loadAdminOffers();
             if (tab.dataset.tab === 'sponsors') loadAdminSponsors();
             if (tab.dataset.tab === 'financials') loadFinancials();
+            if (tab.dataset.tab === 'users') loadAdminUsers();
         });
     });
 });
@@ -834,7 +880,7 @@ window.openLocationPicker = function () {
 // Confirm Location Selection
 window.confirmLocationSelection = function () {
     if (!pickedLocation) {
-        alert('Please click on the map to select a location first.');
+        showToast('Please click on the map to select a location first.', 'error');
         return;
     }
 
@@ -998,12 +1044,12 @@ window.saveServicesOrder = async function () {
         // Update local data
         store.services = newServices;
 
-        alert('✅ Services saved successfully!');
+        showToast('✅ Services saved successfully!', 'success');
         loadAdminStores();
         renderMerchants();
     } catch (error) {
         console.error('Error saving services:', error);
-        alert('Failed to save services');
+        showToast('Failed to save services', 'error');
     }
 };
 
@@ -1032,13 +1078,13 @@ window.openAddServiceModal = function () {
 };
 
 // Delete a service from the list
-window.deleteService = function (index) {
+window.deleteService = async function (index) {
     const items = document.querySelectorAll('#services-sortable-list .sortable-item');
     const item = items[index];
     if (!item) return;
 
     const serviceName = item.dataset.name;
-    if (!confirm(`Delete service "${serviceName}"? This will be saved when you click "Save Changes".`)) return;
+    if (!await showConfirm(`Delete service "${serviceName}"? This will be saved when you click "Save Changes".`)) return;
 
     // Remove from DOM
     item.remove();
@@ -1057,7 +1103,7 @@ document.getElementById('service-form')?.addEventListener('submit', function (e)
     const duration = parseInt(document.getElementById('service-edit-duration').value);
 
     if (!name || isNaN(price) || isNaN(duration)) {
-        alert('Please fill in all fields correctly.');
+        showToast('Please fill in all fields correctly.', 'error');
         return;
     }
 
@@ -1135,7 +1181,7 @@ window.toggleSuspend = async function (id, suspend) {
         renderMerchants(); // Refresh customer view too
     } catch (error) {
         console.error('Error updating store:', error);
-        alert('Failed to update store status');
+        showToast('Failed to update store status', 'error');
     }
 };
 
@@ -1218,11 +1264,13 @@ document.getElementById('store-form')?.addEventListener('submit', async (e) => {
         closeModal('store-modal');
         loadAdminStores();
         loadMerchants();
-        alert('✅ Store and services saved successfully!');
+        loadAdminStores();
+        loadMerchants();
+        showToast('✅ Store and services saved successfully!', 'success');
 
     } catch (error) {
         console.error('Error saving store:', error);
-        alert('Failed to save store: ' + error.message);
+        showToast('Failed to save store: ' + error.message, 'error');
     } finally {
         saveBtn.textContent = originalBtnText;
         saveBtn.disabled = false;
@@ -1337,12 +1385,12 @@ document.getElementById('offer-form')?.addEventListener('submit', async (e) => {
         loadAdminOffers();
     } catch (error) {
         console.error('Error creating offer:', error);
-        alert('Failed to create offer');
+        showToast('Failed to create offer', 'error');
     }
 });
 
 window.deleteOffer = async function (id) {
-    if (!confirm('Delete this offer?')) return;
+    if (!await showConfirm('Delete this offer?')) return;
     try {
         await deleteDoc(doc(db, "offers", id));
         loadAdminOffers();
@@ -1447,12 +1495,12 @@ document.getElementById('sponsor-form')?.addEventListener('submit', async (e) =>
         loadSponsorsForCustomer();
     } catch (error) {
         console.error('Error creating sponsor:', error);
-        alert('Failed to add sponsor');
+        showToast('Failed to add sponsor', 'error');
     }
 });
 
 window.deleteSponsor = async function (id) {
-    if (!confirm('Remove this sponsor?')) return;
+    if (!await showConfirm('Remove this sponsor?')) return;
     try {
         await deleteDoc(doc(db, "sponsors", id));
         loadAdminSponsors();
@@ -1722,12 +1770,12 @@ window.generateStoreInvoice = function () {
     const endDateInput = document.getElementById('invoice-end-date').value;
 
     if (!storeId) {
-        alert('Please select a store');
+        showToast('Please select a store', 'error');
         return;
     }
 
     if (!startDateInput || !endDateInput) {
-        alert('Please select both start and end dates');
+        showToast('Please select both start and end dates', 'error');
         return;
     }
 
@@ -1736,7 +1784,7 @@ window.generateStoreInvoice = function () {
     endDate.setHours(23, 59, 59); // Include full end day
 
     if (startDate > endDate) {
-        alert('Start date must be before end date');
+        showToast('Start date must be before end date', 'error');
         return;
     }
 
@@ -1751,7 +1799,7 @@ window.generateStoreInvoice = function () {
     );
 
     if (storeBookings.length === 0) {
-        alert('No completed bookings found for this store in the selected period.');
+        showToast('No completed bookings found for this store in the selected period.', 'info');
         return;
     }
 
@@ -1856,10 +1904,10 @@ window.saveInvoice = async function () {
 
         renderInvoiceLists();
         closeModal('invoice-modal');
-        alert('Invoice saved to database!');
+        showToast('Invoice saved to database!', 'success');
     } catch (error) {
         console.error('Error saving invoice:', error);
-        alert('Error saving invoice: ' + error.message);
+        showToast('Error saving invoice: ' + error.message, 'error');
     }
 };
 
@@ -1890,10 +1938,10 @@ window.markInvoicePaid = async function () {
             document.getElementById('btn-mark-paid').style.display = 'none';
         }
         renderInvoiceLists();
-        alert('Invoice marked as paid!');
+        showToast('Invoice marked as paid!', 'success');
     } catch (error) {
         console.error('Error marking invoice as paid:', error);
-        alert('Error updating invoice: ' + error.message);
+        showToast('Error updating invoice: ' + error.message, 'error');
     }
 };
 
@@ -2009,10 +2057,10 @@ window.markInvoicePaidById = async function (invoiceId) {
         }
 
         renderInvoiceLists();
-        alert('Invoice marked as paid!');
+        showToast('Invoice marked as paid!', 'success');
     } catch (error) {
         console.error('Error marking invoice as paid:', error);
-        alert('Error updating invoice: ' + error.message);
+        showToast('Error updating invoice: ' + error.message, 'error');
     }
 };
 
@@ -2047,8 +2095,179 @@ window.viewInvoice = function (bookingIndex) {
 // Mark Invoice as Paid
 window.markInvoicePaid = function () {
     document.getElementById('invoice-stamp').style.display = 'block';
-    alert('Invoice marked as paid!');
+    showToast('Invoice marked as paid!', 'success');
 };
+
+// ========== USER MANAGEMENT FUNCTIONS ==========
+
+let allUsers = [];
+let currentUserFilter = 'all';
+
+// Filter Users
+window.filterUsers = function (role) {
+    currentUserFilter = role;
+    const btns = document.querySelectorAll('#admin-users .filter-btn');
+    btns.forEach(b => {
+        if (b.innerText.toLowerCase().includes(role) || (role === 'all' && b.innerText === 'All')) {
+            b.classList.add('active');
+        } else {
+            b.classList.remove('active');
+        }
+    });
+    renderUsersTable();
+}
+
+// Load Users from Firestore
+async function loadAdminUsers() {
+    const tbody = document.getElementById('users-tbody');
+    if (!tbody) return;
+
+    tbody.innerHTML = '<tr><td colspan="6">Loading users...</td></tr>';
+
+    try {
+        // Optimisation: Limit to 50 or paginated in real app
+        const snapshot = await getDocs(collection(db, "customers"));
+        allUsers = [];
+        snapshot.forEach(docSnap => {
+            allUsers.push({ id: docSnap.id, ...docSnap.data() }); // id is phone usually
+        });
+
+        renderUsersTable();
+    } catch (error) {
+        console.error("Error loading users:", error);
+        tbody.innerHTML = '<tr><td colspan="6">Error loading users.</td></tr>';
+        showToast("Failed to load users", "error");
+    }
+}
+
+// Render Users Table
+function renderUsersTable() {
+    const tbody = document.getElementById('users-tbody');
+    if (!tbody) return;
+
+    let filtered = allUsers;
+    if (currentUserFilter !== 'all') {
+        filtered = allUsers.filter(u => u.role === currentUserFilter);
+    }
+
+    if (filtered.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align: center;">No users found.</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = filtered.map(user => {
+        const joinDate = user.createdAt ? new Date(user.createdAt).toLocaleDateString() : 'N/A';
+        let storeName = '-';
+
+        if (user.role === 'owner' && user.storeId) {
+            const store = allMerchants.find(m => m.id === user.storeId);
+            storeName = store ? store.name : '(Unlinked Store)';
+        }
+
+        const roleBadgeColor =
+            user.role === 'admin' ? 'purple' :
+                user.role === 'owner' ? 'orange' : 'gray';
+
+        return `
+            <tr>
+                <td>
+                    <div style="font-weight: 500;">${user.name || 'Unknown'}</div>
+                </td>
+                <td>${user.phone || user.id}</td>
+                <td>
+                    <span class="status-badge" style="background-color: var(--${roleBadgeColor}-100, #eee); color: var(--${roleBadgeColor}-800, #333);">
+                        ${user.role ? user.role.toUpperCase() : 'CUSTOMER'}
+                    </span>
+                </td>
+                <td>${storeName}</td>
+                <td>${joinDate}</td>
+                <td>
+                    <button class="action-btn" onclick="openEditUserModal('${user.phone || user.id}')">✏️ Edit Role</button>
+                    <!-- <button class="action-btn danger">Ban</button> --> 
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+
+// Open Edit Modal
+window.openEditUserModal = function (userId) {
+    const user = allUsers.find(u => (u.phone === userId || u.id === userId));
+    if (!user) return;
+
+    document.getElementById('edit-user-phone').value = userId;
+    document.getElementById('edit-user-name').value = user.name || '';
+    document.getElementById('edit-user-role').value = user.role || 'customer';
+
+    // Populate Store Dropdown
+    const storeSelect = document.getElementById('edit-user-store');
+    storeSelect.innerHTML = '<option value="">-- Select Store --</option>' +
+        allMerchants.map(m => `<option value="${m.id}">${m.name}</option>`).join('');
+
+    // Set current store if owner
+    if (user.role === 'owner' && user.storeId) {
+        storeSelect.value = user.storeId;
+    }
+
+    toggleStoreAssignment();
+    document.getElementById('user-role-modal').style.display = 'flex';
+}
+
+// Toggle Store Dropdown visibility
+window.toggleStoreAssignment = function () {
+    const role = document.getElementById('edit-user-role').value;
+    const group = document.getElementById('assign-store-group');
+    if (role === 'owner') {
+        group.style.display = 'block';
+    } else {
+        group.style.display = 'none';
+        document.getElementById('edit-user-store').value = "";
+    }
+}
+
+// Save User Role
+document.getElementById('user-role-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    const userId = document.getElementById('edit-user-phone').value;
+    const newRole = document.getElementById('edit-user-role').value;
+    const storeId = document.getElementById('edit-user-store').value;
+
+    if (newRole === 'owner' && !storeId) {
+        showToast('Please select a store for the Store Owner', 'error');
+        return;
+    }
+
+    try {
+        const updateData = { role: newRole };
+        if (newRole === 'owner') {
+            updateData.storeId = storeId;
+        } else {
+            // Remove store association if demoted
+            updateData.storeId = deleteDoc; // Actually field deletion syntax varies, usually updateDoc with { storeId: deleteField() }
+            // For simplicity in this non-modular import setup, we might set to null or just ignore
+            updateData.storeId = null;
+        }
+
+        const userRef = doc(db, "customers", userId);
+        await updateDoc(userRef, updateData);
+
+        // Update local state
+        const userIndex = allUsers.findIndex(u => u.phone === userId || u.id === userId);
+        if (userIndex >= 0) {
+            allUsers[userIndex] = { ...allUsers[userIndex], ...updateData };
+        }
+
+        showToast(`User role updated to ${newRole.toUpperCase()}`, 'success');
+        closeModal('user-role-modal');
+        renderUsersTable();
+
+    } catch (error) {
+        console.error("Error updating user role:", error);
+        showToast("Failed to update role", "error");
+    }
+});
+
 
 // Print Invoice
 window.printInvoice = function () {
@@ -2246,10 +2465,10 @@ window.updateBookingStatus = async function (id, status) {
         if (document.getElementById('owner-bookings').style.display !== 'none') {
             loadOwnerBookings(currentBookingFilter);
         }
-        alert(`Booking marked as ${status}`);
+        showToast(`Booking marked as ${status}`, 'success');
     } catch (e) {
         console.error(e);
-        alert('Failed to update status');
+        showToast('Failed to update status', 'error');
     }
 }
 
@@ -2295,10 +2514,10 @@ window.saveOwnerStoreDetails = async function () {
         await updateDoc(doc(db, "merchants", currentUser.storeId), {
             name, address, lat, lng
         });
-        alert('Store details updated!');
+        showToast('Store details updated!', 'success');
     } catch (e) {
         console.error(e);
-        alert('Failed to update store');
+        showToast('Failed to update store', 'error');
     }
 }
 
@@ -2435,7 +2654,7 @@ window.saveOwnerStoreDetails = async function () {
         }
 
         await updateDoc(doc(db, "merchants", currentUser.storeId), updateData);
-        alert('Store details updated successfully!');
+        showToast('Store details updated successfully!', 'success');
 
         // Refresh local store data
         const storeIndex = allMerchants.findIndex(m => m.id === currentUser.storeId);
@@ -2444,7 +2663,7 @@ window.saveOwnerStoreDetails = async function () {
         }
     } catch (e) {
         console.error(e);
-        alert('Failed to update store: ' + e.message);
+        showToast('Failed to update store: ' + e.message, 'error');
     }
 }
 
@@ -2482,7 +2701,7 @@ window.editOwnerService = function (index) {
 }
 
 window.deleteOwnerService = async function (index) {
-    if (!confirm('Are you sure you want to delete this service?')) return;
+    if (!await showConfirm('Are you sure you want to delete this service?')) return;
 
     const store = allMerchants.find(m => m.id === currentUser.storeId);
     store.services.splice(index, 1);
@@ -2491,7 +2710,7 @@ window.deleteOwnerService = async function (index) {
         await updateDoc(doc(db, "merchants", currentUser.storeId), { services: store.services });
         renderOwnerServices(store.services);
     } catch (e) {
-        alert('Error deleting service');
+        showToast('Error deleting service', 'error');
     }
 }
 
@@ -2519,7 +2738,7 @@ async function saveOwnerService(e) {
         closeModal('service-modal');
     } catch (e) {
         console.error(e);
-        alert('Error saving service');
+        showToast('Error saving service', 'error');
     }
 }
 

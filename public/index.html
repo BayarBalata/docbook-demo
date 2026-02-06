@@ -254,6 +254,37 @@
                 <button class="admin-tab" data-tab="offers">🎁 Offers</button>
                 <button class="admin-tab" data-tab="sponsors">📰 Sponsors</button>
                 <button class="admin-tab" data-tab="financials">💰 Financials</button>
+                <button class="admin-tab" data-tab="users">👥 Users</button>
+            </div>
+
+            <!-- USERS TAB -->
+            <div id="admin-users" class="admin-panel" style="display: none;">
+                <div class="panel-header">
+                    <h2>User Management</h2>
+                    <div class="filters">
+                        <button class="filter-btn active" onclick="filterUsers('all')">All</button>
+                        <button class="filter-btn" onclick="filterUsers('customer')">Customers</button>
+                        <button class="filter-btn" onclick="filterUsers('owner')">Owners</button>
+                        <button class="filter-btn" onclick="filterUsers('admin')">Admins</button>
+                    </div>
+                </div>
+                <div class="admin-table-container">
+                    <table class="admin-table" id="users-table">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Phone</th>
+                                <th>Role</th>
+                                <th>Assigned Store</th>
+                                <th>Joined</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="users-tbody">
+                            <!-- Loaded via JS -->
+                        </tbody>
+                    </table>
+                </div>
             </div>
 
             <!-- STORES TAB -->
@@ -479,7 +510,11 @@
                             style="border: none; outline: none; flex: 1; padding: 10px 0;">
                     </div>
                 </div>
-                <button type="submit" class="btn-primary full-width">Send Verification Code</button>
+                <div class="form-group">
+                    <label>Password</label>
+                    <input type="password" id="reg-password" placeholder="Create a password" required>
+                </div>
+                <button type="submit" class="btn-primary full-width">Verify & Create Account</button>
                 <p style="text-align: center; margin-top: 15px; font-size: 0.9rem;">
                     Already have an account? <a href="#" onclick="showAuthStep('login')">Sign In</a>
                 </p>
@@ -497,35 +532,19 @@
                             style="border: none; outline: none; flex: 1; padding: 10px 0;">
                     </div>
                 </div>
-                <button type="submit" class="btn-primary full-width">Send Verification Code</button>
+                <div class="form-group">
+                    <label>Password</label>
+                    <input type="password" id="login-password" placeholder="Enter your password" required>
+                </div>
+                <button type="submit" class="btn-primary full-width">Sign In</button>
                 <p style="text-align: center; margin-top: 15px; font-size: 0.9rem;">
                     Don't have an account? <a href="#" onclick="showAuthStep('register')">Register</a>
                 </p>
             </form>
 
-            <!-- STEP 1: OWNER LOGIN (Hidden by default) -->
+            <!-- OWNER LOGIN Removed (Unified) -->
             <form id="auth-form-owner" style="display: none;">
-                <h3 style="margin-bottom: 15px;">Owner Login</h3>
-                <div class="form-group">
-                    <label>Select Your Store</label>
-                    <select id="auth-store-select">
-                        <option value="">-- Select Store --</option>
-                        <!-- Populated via JS -->
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label>Phone Number</label>
-                    <div class="phone-input-group"
-                        style="display: flex; align-items: center; border: 1px solid #ddd; border-radius: 8px; padding: 2px 10px;">
-                        <span style="font-weight: 600; color: #333; margin-right: 8px;">🇮🇶 +964</span>
-                        <input type="tel" id="owner-phone" placeholder="750xxxxxxx" required
-                            style="border: none; outline: none; flex: 1; padding: 10px 0;">
-                    </div>
-                </div>
-                <button type="submit" class="btn-primary full-width">Login as Owner</button>
-                <p style="text-align: center; margin-top: 15px; font-size: 0.9rem;">
-                    <a href="#" onclick="showAuthStep('choice')">Back to Main Login</a>
-                </p>
+                <!-- Deprecated -->
             </form>
 
             <div id="recaptcha-container"></div>
@@ -646,6 +665,40 @@
                 </div>
 
                 <button type="submit" class="btn-primary full-width">Save Store</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- USER ROLE MODAL -->
+    <div id="user-role-modal" class="modal">
+        <div class="modal-content admin-modal">
+            <span class="close-modal" onclick="closeModal('user-role-modal')">&times;</span>
+            <h2>Edit User Role</h2>
+            <form id="user-role-form">
+                <input type="hidden" id="edit-user-phone">
+                <div class="form-group">
+                    <label>User Name</label>
+                    <input type="text" id="edit-user-name" readonly style="background: #f3f4f6;">
+                </div>
+                <div class="form-group">
+                    <label>Select Role</label>
+                    <select id="edit-user-role" required onchange="toggleStoreAssignment()">
+                        <option value="customer">Customer</option>
+                        <option value="owner">Store Owner</option>
+                        <option value="admin">Admin</option>
+                    </select>
+                </div>
+                <div id="assign-store-group" class="form-group" style="display: none;">
+                    <label>Assign Store</label>
+                    <select id="edit-user-store">
+                        <option value="">-- Select Store --</option>
+                        <!-- Populated via JS -->
+                    </select>
+                    <p class="hint" style="font-size: 0.8rem; color: #666; margin-top: 5px;">
+                        Selecting a store will give this user full access to manage it.
+                    </p>
+                </div>
+                <button type="submit" class="btn-primary full-width">Save Changes</button>
             </form>
         </div>
     </div>
@@ -835,6 +888,21 @@
             </div>
         </div>
     </div>
+
+    <!-- Custom Confirmation Modal -->
+    <div id="custom-confirm-modal" class="modal">
+        <div class="modal-content auth-box">
+            <h3 style="margin-bottom: 10px; color: var(--text);">Confirmation</h3>
+            <p id="confirm-message" style="color: var(--text-light); margin-bottom: 20px;">Are you sure?</p>
+            <div class="confirm-modal-buttons">
+                <button class="btn-outline" id="btn-confirm-cancel">Cancel</button>
+                <button class="btn-primary" id="btn-confirm-ok">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toast-container"></div>
 
     <footer>
         <div class="container">
