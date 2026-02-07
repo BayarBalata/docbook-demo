@@ -1,6 +1,6 @@
 import { db, auth, storage } from "./firebase-config.js";
 import { collection, getDocs, getDoc, query, where, addDoc, doc, updateDoc, deleteDoc, Timestamp, setDoc, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-import { RecaptchaVerifier, signInWithPhoneNumber, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+import { RecaptchaVerifier, signInWithPhoneNumber, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 import { ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js";
 
 // DOM Elements
@@ -95,6 +95,34 @@ async function init() {
     await loadOffersData(); // Load offers first so discounts show on cards
     await loadMerchants();
     loadSponsorsForCustomer();
+
+    // Persistent Login
+    onAuthStateChanged(auth, async (user) => {
+        if (user) {
+            // Extract phone from dummy email (phone@docbook.app)
+            let phone = null;
+            if (user.email && user.email.includes('@docbook.app')) {
+                phone = user.email.split('@')[0];
+            }
+
+            if (phone) {
+                try {
+                    const userDoc = await checkUserExists(phone);
+                    if (userDoc) {
+                        currentUser = userDoc;
+                        console.log("Session restored:", currentUser.name);
+                        updateUIForUser();
+                    }
+                } catch (e) {
+                    console.error("Error restoring session:", e);
+                }
+            }
+        } else {
+            // User is signed out
+            currentUser = null;
+            // Optional: update UI to show login button if needed, but it's default
+        }
+    });
 }
 
 // Load offers data (for discount display)
@@ -220,7 +248,7 @@ function setupEventListeners() {
     if (loginBtn) {
         loginBtn.addEventListener('click', () => {
             authModal.style.display = 'flex';
-            showAuthStep('choice');
+            showAuthStep('login');
         });
     }
 
@@ -707,95 +735,295 @@ window.initMapCallback = function () {
 }
 
 // Global scope for HTML access
+// Global scope for HTML access
+let bookingState = {
+    merchant: null,
+    services: [], // Array of selected service objects
+    date: null,
+    time: null,
+    step: 1
+};
+
 window.openMerchantDetails = function (id) {
     const merchant = allMerchants.find(m => m.id === id);
     if (!merchant) return;
 
-    // Get active offers for this merchant
+    // Reset State
+    bookingState = {
+        merchant: merchant,
+        services: [],
+        date: null,
+        time: null,
+        step: 1
+    };
+
+    renderBookingWizard();
+    document.getElementById('booking-modal').style.display = 'flex';
+}
+
+function renderBookingWizard() {
+    const body = document.getElementById('booking-modal-body');
+    const footer = document.getElementById('booking-modal-footer');
+
+    // Header (Static for all steps)
+    let content = `
+        <div class="modal-header" style="text-align: center; margin-bottom: 20px;">
+            <h2 style="margin-bottom: 5px;">${bookingState.merchant.name}</h2>
+            <p style="color: #666;">Step ${bookingState.step} of 3</p>
+        </div>
+    `;
+
+    // Step 1: Select Services
+    if (bookingState.step === 1) {
+        content += renderBookingStep1();
+        footer.innerHTML = `
+            <button class="btn-outline" onclick="closeModal('booking-modal')">Cancel</button>
+            <button class="btn-primary" onclick="nextBookingStep()" ${bookingState.services.length === 0 ? 'disabled' : ''}>Next ➝</button>
+        `;
+    }
+    // Step 2: Select Date & Time
+    else if (bookingState.step === 2) {
+        content += renderBookingStep2();
+        footer.innerHTML = `
+            <button class="btn-outline" onclick="prevBookingStep()">← Back</button>
+            <button class="btn-primary" onclick="nextBookingStep()" ${!bookingState.date || !bookingState.time ? 'disabled' : ''}>Next ➝</button>
+        `;
+    }
+    // Step 3: Confirm
+    else if (bookingState.step === 3) {
+        content += renderBookingStep3();
+        footer.innerHTML = `
+            <button class="btn-outline" onclick="prevBookingStep()">← Back</button>
+            <button class="btn-primary" onclick="submitBooking()" style="background: #059669;">Confirm Booking ✅</button>
+        `;
+    }
+
+    body.innerHTML = content;
+}
+
+
+// --- STEP 1: SERVICES ---
+function renderBookingStep1() {
+    const merchant = bookingState.merchant;
     const now = new Date();
+
+    // Get active offers
     const merchantOffers = allOffers.filter(o => {
         if (o.storeId !== merchant.id) return false;
         const endDate = o.endDate?.toDate ? o.endDate.toDate() : new Date(o.endDate);
         return endDate > now && o.active;
     });
 
-    // Generate services HTML with discounts
-    const servicesHtml = merchant.services ? merchant.services.map((s, index) => {
-        // Match by serviceName instead of serviceIndex to survive reordering
+    const servicesList = merchant.services ? merchant.services.map((s, index) => {
+        const isSelected = bookingState.services.some(sel => sel.name === s.name);
+
+        // Calculate Price with Offer
         const offer = merchantOffers.find(o => o.serviceName === s.name);
         const hasDiscount = !!offer;
         const discountPercent = offer?.discountPercent || 0;
-        const newPrice = hasDiscount ? Math.round(s.price * (1 - discountPercent / 100)) : s.price;
+        const currentPrice = hasDiscount ? Math.round(s.price * (1 - discountPercent / 100)) : s.price;
 
         return `
-        <div class="service-row" style="display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #eee;">
-            <div>
-                <div style="font-weight: 500; display: flex; align-items: center; gap: 8px;">
-                    ${s.name}
-                    ${hasDiscount ? `<span class="service-discount-tag">${discountPercent}% OFF</span>` : ''}
+        <div class="service-select-item ${isSelected ? 'selected' : ''}" onclick="toggleServiceSelection('${s.name}', ${currentPrice}, ${s.duration})">
+            <div style="display: flex; align-items: center;">
+                <div class="checkbox-circle"></div>
+                <div>
+                    <div style="font-weight: 500;">
+                        ${s.name} ${hasDiscount ? `<span class="service-discount-tag">${discountPercent}% OFF</span>` : ''}
+                    </div>
+                    <div style="font-size: 0.8rem; color: #666;">${s.duration} mins</div>
                 </div>
-                <div style="font-size: 0.8rem; color: #888;">${s.duration} mins</div>
             </div>
-            <div style="display: flex; align-items: center; gap: 10px;">
-                <div style="text-align: right;">
-                    ${hasDiscount ? `
-                        <div style="font-size: 0.75rem; color: #999; text-decoration: line-through;">${s.price.toLocaleString()} IQD</div>
-                        <div style="font-weight: 600; color: #16a34a;">${newPrice.toLocaleString()} IQD</div>
-                    ` : `
-                        <div style="font-weight: 600;">${s.price.toLocaleString()} IQD</div>
-                    `}
-                </div>
-                <button class="btn-outline" style="padding: 4px 12px; font-size: 0.8rem;" 
-                    onclick="confirmRealBooking('${merchant.id}', '${merchant.name}', '${s.name}', ${newPrice}, ${s.duration})">Book</button>
-            </div>
+            <div style="font-weight: 600;">${currentPrice.toLocaleString()} IQD</div>
         </div>
-    `}).join('') : '<p>No services listed.</p>';
+        `;
+    }).join('') : '<p>No services available.</p>';
 
-    // Photo or emoji for header
-    const headerImage = merchant.photoUrl
-        ? `<img src="${merchant.photoUrl}" alt="${merchant.name}" style="width: 100%; height: 150px; object-fit: cover; border-radius: 8px; margin-bottom: 15px;">`
-        : '';
+    // Calculate Totals
+    const totalCost = bookingState.services.reduce((sum, s) => sum + s.price, 0);
+    const totalTime = bookingState.services.reduce((sum, s) => sum + s.duration, 0);
 
-    bookingModalBody.innerHTML = `
-        ${headerImage}
-        <div class="modal-header" style="text-align: center; margin-bottom: 20px;">
-            <h2 style="margin-bottom: 5px;">${merchant.name}</h2>
-            <p style="color: #666;">${merchant.address}</p>
-            ${merchant.lat && merchant.lng ? `<span class="btn-map-link" onclick="showOnMap('${merchant.id}'); document.getElementById('booking-modal').style.display='none';">📍 View on Map</span>` : ''}
+    return `
+        <h3 style="margin-bottom: 15px;">Select Services</h3>
+        <div class="services-list" style="max-height: 300px; overflow-y: auto;">
+            ${servicesList}
         </div>
-        <h3 style="margin-bottom: 15px; font-size: 1.1rem;">Select Service</h3>
-        <div class="services-list">
-            ${servicesHtml}
+        <div class="booking-total">
+            <span>Total (${bookingState.services.length} services):</span>
+            <span>${totalCost.toLocaleString()} IQD</span>
         </div>
     `;
-    bookingModal.style.display = 'flex';
 }
 
-window.initiateBooking = async function (merchantId, serviceName, price) {
+window.toggleServiceSelection = function (name, price, duration) {
+    const index = bookingState.services.findIndex(s => s.name === name);
+    if (index === -1) {
+        bookingState.services.push({ name, price, duration });
+    } else {
+        bookingState.services.splice(index, 1);
+    }
+    renderBookingWizard();
+}
+
+// --- STEP 2: DATE & TIME ---
+function renderBookingStep2() {
+    // Generate next 14 days
+    let datesHtml = '';
+    const today = new Date();
+
+    for (let i = 0; i < 14; i++) {
+        const d = new Date(today);
+        d.setDate(today.getDate() + i);
+        const dateStr = d.toDateString();
+        const isSelected = bookingState.date === dateStr;
+
+        const dayName = d.toLocaleDateString('en-US', { weekday: 'short' });
+        const dayNum = d.getDate();
+
+        datesHtml += `
+            <div class="date-card ${isSelected ? 'selected' : ''}" onclick="selectBookingDate('${dateStr}')">
+                <div style="font-size: 0.8rem;">${dayName}</div>
+                <div style="font-weight: 700; font-size: 1.2rem;">${dayNum}</div>
+            </div>
+        `;
+    }
+
+    // Generate Time Slots (10:00 to 20:00)
+    let timesHtml = '';
+    if (bookingState.date) {
+        const startHour = 10;
+        const endHour = 20;
+        for (let h = startHour; h < endHour; h++) {
+            // :00
+            const time1 = `${h}:00`;
+            const isSel1 = bookingState.time === time1;
+            timesHtml += `<div class="time-slot ${isSel1 ? 'selected' : ''}" onclick="selectBookingTime('${time1}')">${time1}</div>`;
+
+            // :30
+            const time2 = `${h}:30`;
+            const isSel2 = bookingState.time === time2;
+            timesHtml += `<div class="time-slot ${isSel2 ? 'selected' : ''}" onclick="selectBookingTime('${time2}')">${time2}</div>`;
+        }
+    } else {
+        timesHtml = '<p style="grid-column: span 3; text-align: center; color: #888;">Select a date first</p>';
+    }
+
+    return `
+        <h3 style="margin-bottom: 10px;">Select Date</h3>
+        <div class="date-picker-grid">
+            ${datesHtml}
+        </div>
+        
+        <h3 style="margin-bottom: 10px;">Select Time</h3>
+        <div class="time-slots-grid">
+            ${timesHtml}
+        </div>
+    `;
+}
+
+window.selectBookingDate = function (dateStr) {
+    bookingState.date = dateStr;
+    bookingState.time = null; // Reset time on date change
+    renderBookingWizard();
+}
+
+window.selectBookingTime = function (timeStr) {
+    bookingState.time = timeStr;
+    renderBookingWizard();
+}
+
+// --- STEP 3: CONFIRM ---
+function renderBookingStep3() {
+    const totalCost = bookingState.services.reduce((sum, s) => sum + s.price, 0);
+
+    const servicesSummary = bookingState.services.map(s => `
+        <div class="booking-detail-item">
+            <span>${s.name}</span>
+            <span>${s.price.toLocaleString()} IQD</span>
+        </div>
+    `).join('');
+
+    return `
+        <h3 style="margin-bottom: 15px;">Confirm Details</h3>
+        <div class="booking-summary">
+            <div class="booking-detail-item">
+                <strong style="color: #666;">Date & Time</strong>
+                <strong>${bookingState.date}, ${bookingState.time}</strong>
+            </div>
+            <div style="margin-top: 15px; margin-bottom: 5px; font-weight: 600; color: #666;">Services</div>
+            ${servicesSummary}
+            <div class="booking-total">
+                <span>Total Amount:</span>
+                <span style="color: var(--primary);">${totalCost.toLocaleString()} IQD</span>
+            </div>
+        </div>
+        <p style="text-align: center; margin-top: 15px; font-size: 0.9rem; color: #666;">
+            Payment will be collected at the venue.
+        </p>
+    `;
+}
+
+// Navigation
+window.nextBookingStep = function () {
+    bookingState.step++;
+    renderBookingWizard();
+}
+
+window.prevBookingStep = function () {
+    bookingState.step--;
+    renderBookingWizard();
+}
+
+// Submit
+window.submitBooking = async function () {
     if (!currentUser) {
-        showToast("Please login first to book an appointment.", 'error');
-        bookingModal.style.display = 'none';
+        showToast("Please login first.", 'error');
+        document.getElementById('booking-modal').style.display = 'none';
         authModal.style.display = 'flex';
         return;
     }
 
-    if (await showConfirm(`Confirm booking for ${serviceName} ($${price})?`)) {
-        try {
-            await addDoc(collection(db, "bookings"), {
-                merchantId,
-                serviceName,
-                price,
-                customerId: currentUser.phone,
-                customerName: currentUser.name,
-                status: 'pending',
-                createdAt: new Date()
-            });
-            showToast("Booking request sent! The owner will confirm shortly.", 'success');
-            bookingModal.style.display = 'none';
-        } catch (e) {
-            console.error("Error booking:", e);
-            showToast("Failed to book. Try again.", 'error');
-        }
+    const totalCost = bookingState.services.reduce((sum, s) => sum + s.price, 0);
+    const totalDuration = bookingState.services.reduce((sum, s) => sum + s.duration, 0);
+
+    // Create Date Object
+    const dateTimeStr = `${bookingState.date} ${bookingState.time}`;
+    const bookingDateObj = new Date(dateTimeStr);
+
+    try {
+        const bookingData = {
+            userId: currentUser.id || currentUser.phone,
+            customerName: currentUser.name,
+            customerPhone: currentUser.phone,
+            storeId: bookingState.merchant.id,
+            storeName: bookingState.merchant.name,
+
+            // New Array Structure
+            services: bookingState.services,
+
+            // Legacy fields for backward compat (using first service or summary)
+            serviceName: bookingState.services.map(s => s.name).join(', '),
+            servicePrice: totalCost,
+            price: totalCost, // key for owner dashboard compatibility
+            serviceDuration: totalDuration,
+
+            bookingDate: bookingDateObj,
+            status: 'pending',
+            commission: Math.round(totalCost * 0.1),
+            createdAt: new Date().toISOString()
+        };
+
+        await addDoc(collection(db, 'bookings'), bookingData);
+
+        showToast('Booking Request Sent! 🚀', 'success');
+        document.getElementById('booking-modal').style.display = 'none';
+
+        // Refresh if needed
+        if (currentUser.role === 'admin') loadFinancials();
+
+    } catch (e) {
+        console.error("Booking Error:", e);
+        showToast("Failed to book service.", 'error');
     }
 }
 

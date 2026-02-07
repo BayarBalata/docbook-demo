@@ -2276,3 +2276,208 @@ input[type="number"] {
 .booking-detail-item:last-child {
     border-bottom: none;
 }
+
+/* Booking Wizard Styles */
+.booking-step {
+    display: none;
+    animation: fadeIn 0.3s ease;
+}
+
+.booking-step.active {
+    display: block;
+}
+
+.service-select-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.service-select-item:hover {
+    background: var(--background);
+}
+
+.service-select-item.selected {
+    border-color: var(--primary);
+    background: #f3e8ff;
+}
+
+.checkbox-circle {
+    width: 20px;
+    height: 20px;
+    border: 2px solid #ccc;
+    border-radius: 50%;
+    margin-right: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.service-select-item.selected .checkbox-circle {
+    border-color: var(--primary);
+    background: var(--primary);
+}
+
+.service-select-item.selected .checkbox-circle::after {
+    content: '✓';
+    color: white;
+    font-size: 12px;
+}
+
+.date-picker-grid {
+    display: flex;
+    overflow-x: auto;
+    gap: 10px;
+    padding-bottom: 10px;
+    margin-bottom: 20px;
+}
+
+.date-card {
+    min-width: 60px;
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.date-card:hover {
+    border-color: var(--primary);
+}
+
+.date-card.selected {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: white;
+}
+
+.time-slots-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+}
+
+.time-slot {
+    padding: 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    text-align: center;
+    cursor: pointer;
+    background: var(--surface);
+}
+
+.time-slot:hover {
+    border-color: var(--primary);
+}
+
+.time-slot.selected {
+    background: var(--primary);
+    color: white;
+    border-color: var(--primary);
+}
+
+.booking-summary {
+    background: var(--background);
+    padding: 15px;
+    border-radius: 8px;
+    margin-top: 15px;
+}
+
+.booking-total {
+    display: flex;
+    justify-content: space-between;
+    font-weight: 700;
+    font-size: 1.1rem;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid #ddd;
+}
+/* --- FIXES FOR BOOKING WIZARD --- */
+.modal {
+    display: none; /* Hidden by default */
+    position: fixed;
+    z-index: 2000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+    background-color: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(4px);
+    /* Flexbox for centering */
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-content.booking-box {
+    width: 90%;
+    max-width: 500px;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    margin: auto; /* Fallback */
+    position: relative;
+    background: white;
+    border-radius: 16px;
+    padding: 24px;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+    animation: zoomIn 0.3s ease;
+}
+
+#booking-modal-body {
+    flex: 1;
+    overflow-y: auto;
+    margin-bottom: 20px;
+    padding-right: 5px; /* Space for scrollbar */
+}
+
+#booking-modal-footer {
+    padding-top: 15px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: white;
+    z-index: 10;
+}
+
+@keyframes zoomIn {
+    from { opacity: 0; transform: scale(0.95); }
+    to { opacity: 1; transform: scale(1); }
+}
+
+/* --- ROBUST FOOTER FIXES --- */
+#booking-modal-footer {
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    min-height: 60px !important;
+    padding: 15px !important;
+    border-top: 1px solid #eee !important;
+    background: white !important;
+    width: 100% !important;
+    margin-top: auto !important; /* Push to bottom */
+    z-index: 9999 !important;
+    position: relative !important;
+}
+
+#booking-modal-footer button {
+    display: inline-block !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+}
+
+/* Ensure modal content expands */
+.modal-content.booking-box {
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: visible !important; /* Allow footer to be seen if outside */
+    padding-bottom: 0 !important; /* Let footer handle padding */
+}

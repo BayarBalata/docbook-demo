@@ -566,7 +566,8 @@
                 </div>
                 <button type="submit" class="btn-primary full-width">Verify & Create Account</button>
                 <p style="text-align: center; margin-top: 15px; font-size: 0.9rem;">
-                    Already have an account? <a href="#" onclick="showAuthStep('login')">Sign In</a>
+                    Already have an account? <a href="#" onclick="showAuthStep('login')"
+                        style="font-weight: 600; color: var(--primary);">Sign In</a>
                 </p>
             </form>
 
@@ -587,8 +588,10 @@
                     <input type="password" id="login-password" placeholder="Enter your password" required>
                 </div>
                 <button type="submit" class="btn-primary full-width">Sign In</button>
-                <p style="text-align: center; margin-top: 15px; font-size: 0.9rem;">
-                    Don't have an account? <a href="#" onclick="showAuthStep('register')">Register</a>
+                <p style="text-align: center; margin-top: 15px; font-size: 0.95rem;">
+                    Don't have an account? <a href="#" onclick="showAuthStep('register')"
+                        style="font-weight: 600; color: var(--primary);">Register Now</a>
+                    <br><span style="font-size: 0.85rem; color: #666;">(It takes less than a minute!) 🚀</span>
                 </p>
             </form>
 
@@ -617,13 +620,7 @@
         </div>
     </div>
 
-    <!-- BOOKING MODAL -->
-    <div id="booking-modal" class="modal">
-        <div class="modal-content">
-            <span class="close-booking">&times;</span>
-            <div id="booking-modal-body"></div>
-        </div>
-    </div>
+
 
     <!-- MAP MODAL -->
     <div id="map-modal" class="modal">
@@ -853,6 +850,20 @@
                 </div>
                 <button type="submit" class="btn-primary full-width">Save Service</button>
             </form>
+        </div>
+    </div>
+
+
+    <!-- BOOKING MODAL -->
+    <div id="booking-modal" class="modal">
+        <div class="modal-content booking-box">
+            <span class="close-booking" onclick="closeModal('booking-modal')">&times;</span>
+            <div id="booking-modal-body">
+                <!-- Content loaded via JS -->
+            </div>
+            <div id="booking-modal-footer">
+                <!-- Buttons injected by JS -->
+            </div>
         </div>
     </div>
 
