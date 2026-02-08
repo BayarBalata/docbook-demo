@@ -284,8 +284,13 @@ function setupEventListeners() {
         regForm.onsubmit = async (e) => {
             e.preventDefault();
             const name = document.getElementById('reg-name').value.trim();
-            const phone = document.getElementById('reg-phone').value.trim();
+            let phone = document.getElementById('reg-phone').value.trim();
             const password = document.getElementById('reg-password').value;
+
+            // Sanitize Phone
+            if (phone.startsWith('+964')) phone = phone.substring(4);
+            if (phone.startsWith('00964')) phone = phone.substring(5);
+            if (phone.startsWith('0')) phone = phone.substring(1);
 
             if (phone.length < 10) {
                 showToast('Please enter a valid phone number', 'error');
@@ -333,8 +338,13 @@ function setupEventListeners() {
     if (loginForm) {
         loginForm.onsubmit = async (e) => {
             e.preventDefault();
-            const phone = document.getElementById('login-phone').value.trim();
+            let phone = document.getElementById('login-phone').value.trim();
             const password = document.getElementById('login-password').value;
+
+            // Sanitize Phone
+            if (phone.startsWith('+964')) phone = phone.substring(4);
+            if (phone.startsWith('00964')) phone = phone.substring(5);
+            if (phone.startsWith('0')) phone = phone.substring(1);
 
             if (phone.length < 10) {
                 showToast('Please enter a valid phone number', 'error');
@@ -2120,12 +2130,13 @@ window.generateStoreInvoice = function () {
     const storeBookings = allBookings.filter(b =>
         b.storeId === storeId &&
         b.status === 'completed' &&
+        !b.invoiced && // Only not yet invoiced
         b.bookingDate >= startDate &&
         b.bookingDate <= endDate
     );
 
     if (storeBookings.length === 0) {
-        showToast('No completed bookings found for this store in the selected period.', 'info');
+        showToast('No uninvoiced completed bookings found for this period.', 'info');
         return;
     }
 
@@ -2198,6 +2209,17 @@ window.saveInvoice = async function () {
     if (!currentInvoiceData) return;
 
     try {
+        // Prepare updates for bookings
+        const bookingUpdates = [];
+        currentInvoiceData.bookings.forEach(b => {
+            if (b.id) { // Ensure ID exists
+                const bookingRef = doc(db, 'bookings', b.id);
+                bookingUpdates.push(updateDoc(bookingRef, { invoiced: true }));
+            }
+        });
+
+        await Promise.all(bookingUpdates);
+
         // Convert for Firestore storage (no Date objects directly, store booking info as simplified array)
         const invoiceForFirestore = {
             id: currentInvoiceData.id,
@@ -2681,7 +2703,7 @@ async function loadOwnerOverview() {
     // For now, we will just use dummy or fetch if bookings collection exists
     // Let's assume we fetch all bookings for this merchant
     try {
-        const q = query(collection(db, "bookings"), where("merchantId", "==", storeId));
+        const q = query(collection(db, "bookings"), where("storeId", "==", storeId));
         const snapshot = await getDocs(q);
         const bookings = [];
         snapshot.forEach(d => bookings.push({ id: d.id, ...d.data() }));
@@ -2691,10 +2713,11 @@ async function loadOwnerOverview() {
         bookings.forEach(b => {
             // Calculate Revenue
             if (b.status === 'completed') {
-                totalRevenue += (b.price || 0);
+                totalRevenue += (b.price || b.servicePrice || 0);
             }
             // Count Today's
-            if (b.createdAt && b.createdAt.toDate().toDateString() === today) {
+            const bCreated = b.createdAt ? (b.createdAt.toDate ? b.createdAt.toDate() : new Date(b.createdAt)) : null;
+            if (bCreated && bCreated.toDateString() === today) {
                 todayBookingsCount++;
             }
             // Count Pending
@@ -2719,7 +2742,7 @@ async function loadOwnerOverview() {
                     <div style="display: flex; justify-content: space-between; align-items: center;">
                         <div>
                             <strong>${b.customerName || 'Customer'}</strong> requested <strong>${b.serviceName}</strong>
-                            <div style="font-size: 0.85rem; color: #888;">${b.createdAt ? b.createdAt.toDate().toLocaleString() : ''}</div>
+                            <div style="font-size: 0.85rem; color: #888;">${b.createdAt ? (b.createdAt.toDate ? b.createdAt.toDate().toLocaleString() : new Date(b.createdAt).toLocaleString()) : ''}</div>
                         </div>
                         <div>
                             <button class="btn-primary" style="padding: 4px 12px; font-size: 0.8rem;" onclick="updateBookingStatus('${b.id}', 'confirmed')">Accept</button>
@@ -2756,10 +2779,17 @@ async function loadOwnerBookings(status) {
     tbody.innerHTML = '<tr><td colspan="6">Loading...</td></tr>';
 
     try {
-        const q = query(collection(db, "bookings"), where("storeId", "==", currentUser.storeId), orderBy("createdAt", "desc"));
-        const snapshot = await getDocs(q); // In real app, might need composite index
+        const q = query(collection(db, "bookings"), where("storeId", "==", currentUser.storeId));
+        const snapshot = await getDocs(q);
         let bookings = [];
         snapshot.forEach(d => bookings.push({ id: d.id, ...d.data() }));
+
+        // Client-side sort to avoid composite index requirement
+        bookings.sort((a, b) => {
+            const timeA = a.createdAt && a.createdAt.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt || 0).getTime();
+            const timeB = b.createdAt && b.createdAt.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt || 0).getTime();
+            return timeB - timeA;
+        });
 
         if (status !== 'all') {
             bookings = bookings.filter(b => b.status === status);
@@ -2774,8 +2804,8 @@ async function loadOwnerBookings(status) {
             <tr>
                 <td>${b.customerName}</td>
                 <td>${b.serviceName}</td>
-                <td>${b.createdAt ? b.createdAt.toDate().toLocaleString() : 'N/A'}</td>
-                <td>${b.price.toLocaleString()} IQD</td>
+                <td>${b.createdAt ? (b.createdAt.toDate ? b.createdAt.toDate().toLocaleString() : new Date(b.createdAt).toLocaleString()) : 'N/A'}</td>
+                <td>${(b.price || b.servicePrice || 0).toLocaleString()} IQD</td>
                 <td>
                     <span class="status-badge ${b.status}">
                         ${b.status.charAt(0).toUpperCase() + b.status.slice(1)}
@@ -2798,6 +2828,18 @@ async function loadOwnerBookings(status) {
         tbody.innerHTML = '<tr><td colspan="6">Error or Missing Index. Please check console.</td></tr>';
     }
 }
+
+window.updateBookingStatus = async function (id, status) {
+    try {
+        await updateDoc(doc(db, "bookings", id), { status: status });
+        showToast(`Booking ${status}!`, 'success');
+        loadOwnerBookings(currentBookingFilter);
+        loadOwnerOverview(); // Refresh stats
+    } catch (e) {
+        console.error("Error updating booking:", e);
+        showToast("Failed to update status", "error");
+    }
+};
 
 // 2b. Calendar Tab
 let currentCalendarDate = new Date();
@@ -2909,6 +2951,15 @@ async function loadOwnerStore() {
     document.getElementById('owner-store-lat').value = store.lat || '';
     document.getElementById('owner-store-lng').value = store.lng || '';
 
+    // Load Photo
+    const preview = document.getElementById('owner-store-photo-preview');
+    if (store.photoUrl) {
+        preview.src = store.photoUrl;
+        preview.style.display = 'block';
+    } else {
+        preview.style.display = 'none';
+    }
+
     // Services
     renderOwnerServices(store.services || []);
 }
@@ -2954,16 +3005,23 @@ async function loadOwnerFinancials() {
 
     // 1. Calculate Total Revenue & Commission Due
     let totalRevenue = 0;
+    let pendingCommission = 0;
 
     try {
         // Fetch bookings for revenue
-        const bookingsQ = query(collection(db, "bookings"), where("merchantId", "==", storeId));
+        const bookingsQ = query(collection(db, "bookings"), where("storeId", "==", storeId));
         const bookingSnapshot = await getDocs(bookingsQ);
 
         bookingSnapshot.forEach(doc => {
             const b = doc.data();
             if (b.status === 'completed') {
-                totalRevenue += (b.price || 0);
+                const price = b.price || b.servicePrice || 0;
+                totalRevenue += price;
+                
+                // Track commission not yet invoiced
+                if (!b.invoiced) {
+                    pendingCommission += (b.commission || Math.round(price * 0.1));
+                }
             }
         });
 
@@ -2975,21 +3033,31 @@ async function loadOwnerFinancials() {
 
     // 2. Fetch Invoices for Commission Due & History
     try {
-        const invoicesQ = query(collection(db, "invoices"), where("storeId", "==", storeId), orderBy("createdAt", "desc"));
+        const invoicesQ = query(collection(db, "invoices"), where("storeId", "==", storeId));
         const invoiceSnapshot = await getDocs(invoicesQ);
 
         const invoices = [];
-        let commissionDue = 0;
+        let invoicedDue = 0;
 
         invoiceSnapshot.forEach(doc => {
             const inv = { id: doc.id, ...doc.data() };
             invoices.push(inv);
             if (!inv.isPaid) {
-                commissionDue += (inv.commission || 0);
+                invoicedDue += (inv.commission || 0);
             }
         });
 
-        document.getElementById('owner-fin-due').innerText = `${commissionDue.toLocaleString()} IQD`;
+        // Client-side sort
+        invoices.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+        // Update UI
+        // We will show "Invoiced Due" as the main large number, and mention "Pending" below it
+        document.getElementById('owner-fin-due').innerHTML = `
+            ${invoicedDue.toLocaleString()} IQD
+            <div style="font-size: 0.8rem; color: #666; margin-top: 5px;">
+                + ${pendingCommission.toLocaleString()} IQD unbilled
+            </div>
+        `;
 
         // Render Invoices List
         const invoicesList = document.getElementById('owner-invoices-list');
@@ -3076,7 +3144,7 @@ window.saveOwnerStoreDetails = async function () {
             const storageRef = ref(storage, `stores/${currentUser.storeId}/${Date.now()}_${photoFile.name}`);
             const snapshot = await uploadBytes(storageRef, photoFile);
             const downloadURL = await getDownloadURL(snapshot.ref);
-            updateData.photo = downloadURL;
+            updateData.photoUrl = downloadURL;
         }
 
         await updateDoc(doc(db, "merchants", currentUser.storeId), updateData);
