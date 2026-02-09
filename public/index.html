@@ -146,6 +146,7 @@
                         <button class="filter-btn active" onclick="filterOwnerBookings('all')">All</button>
                         <button class="filter-btn" onclick="filterOwnerBookings('pending')">Pending</button>
                         <button class="filter-btn" onclick="filterOwnerBookings('confirmed')">Confirmed</button>
+                        <button class="filter-btn" onclick="filterOwnerBookings('cancelled')">Cancelled</button>
                         <button class="filter-btn" onclick="filterOwnerBookings('completed')">Completed</button>
                     </div>
                 </div>
@@ -265,25 +266,38 @@
             <!-- FINANCIALS TAB -->
             <div id="owner-financials" class="owner-panel" style="display: none;">
                 <div class="panel-header">
-                    <h2>Financial Overview</h2>
+                    <h2>💰 Financial Overview</h2>
                 </div>
                 <div class="stats-grid">
                     <div class="stat-card">
-                        <h3>Total Earnings</h3>
-                        <p class="stat-num" id="owner-fin-total">0 IQD</p>
-                        <span class="stat-trend">Gross Revenue</span>
+                        <h3>Total Revenue</h3>
+                        <p class="stat-num" id="owner-fin-total" style="color: #22c55e;">0 IQD</p>
+                        <span class="stat-trend">From completed bookings</span>
                     </div>
                     <div class="stat-card highlight">
                         <h3>Commission Due</h3>
-                        <p class="stat-num" id="owner-fin-due">0 IQD</p>
-                        <span class="stat-trend">To Platform (10%)</span>
+                        <p class="stat-num" id="owner-fin-due" style="color: #ef4444;">0 IQD</p>
+                        <span class="stat-trend">Platform fee (10%)</span>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Net Earnings</h3>
+                        <p class="stat-num" id="owner-fin-net" style="color: #3b82f6;">0 IQD</p>
+                        <span class="stat-trend">After commission</span>
                     </div>
                 </div>
 
-                <div class="invoices-section">
+                <!-- Recent Transactions -->
+                <div class="invoices-section" style="margin-top: 20px;">
+                    <h3>📊 Recent Transactions</h3>
+                    <div id="owner-transactions-list" style="background: white; border-radius: 12px; overflow: hidden;">
+                        <div class="empty-state">No transactions yet.</div>
+                    </div>
+                </div>
+
+                <!-- Invoices from Admin -->
+                <div class="invoices-section" style="margin-top: 20px;">
                     <h3>📄 Invoices from DocBook</h3>
                     <div id="owner-invoices-list" class="invoices-list">
-                        <!-- Loaded via JS -->
                         <div class="empty-state">No invoices yet.</div>
                     </div>
                 </div>
@@ -960,6 +974,39 @@
                 <button class="btn-primary" id="btn-confirm-ok">Confirm</button>
             </div>
         </div>
+    </div>
+
+    <!-- DEV MODE PANEL -->
+    <div id="dev-mode-panel" style="
+        position: fixed;
+        top: 70px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+        color: white;
+        padding: 8px 15px;
+        border-radius: 10px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        z-index: 9999;
+        font-size: 0.75rem;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    ">
+        <span style="font-size: 0.9rem;">🔧</span>
+        <span style="background: #e94560; padding: 2px 6px; border-radius: 6px; font-size: 0.65rem;">DEV</span>
+        <button onclick="devLogin('7804888220', '')" style="
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            border: none; color: white; padding: 4px 10px; border-radius: 6px; cursor: pointer; font-size: 0.7rem;
+        ">👤 Customer</button>
+        <button onclick="devLogin('7734888220', '')" style="
+            background: linear-gradient(135deg, #f093fb, #f5576c);
+            border: none; color: white; padding: 4px 10px; border-radius: 6px; cursor: pointer; font-size: 0.7rem;
+        ">🏪 Owner</button>
+        <button onclick="devLogin('7504888220', '')" style="
+            background: linear-gradient(135deg, #4facfe, #00f2fe);
+            border: none; color: white; padding: 4px 10px; border-radius: 6px; cursor: pointer; font-size: 0.7rem;
+        ">👑 Admin</button>
     </div>
 
     <!-- Toast Container -->

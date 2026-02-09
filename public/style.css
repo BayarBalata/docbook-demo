@@ -2229,11 +2229,21 @@ input[type="number"] {
     transition: all 0.2s;
     background: var(--surface);
     color: var(--text);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+}
+
+.calendar-day .day-number {
+    font-weight: 600;
+    font-size: 1rem;
 }
 
 .calendar-day:hover {
     background: var(--background);
-    border-color: var(--text-light);
+    border-color: var(--primary);
+    transform: scale(1.02);
 }
 
 .calendar-day.active {
@@ -2243,16 +2253,40 @@ input[type="number"] {
     font-weight: 600;
 }
 
-.calendar-day.has-bookings::after {
-    content: '';
-    position: absolute;
-    bottom: 6px;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 6px;
-    height: 6px;
-    background: var(--primary);
-    border-radius: 50%;
+.calendar-day.today {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border-color: #764ba2;
+}
+
+.calendar-day.today .day-number {
+    color: white;
+}
+
+.calendar-day.today .booking-count-badge {
+    background: rgba(255, 255, 255, 0.3);
+    color: white;
+}
+
+.calendar-day.has-bookings {
+    background: #f0fdf4;
+    border-color: #22c55e;
+}
+
+.calendar-day.has-bookings.today {
+    background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+}
+
+.booking-count-badge {
+    font-size: 0.75rem;
+    font-weight: 600;
+    background: linear-gradient(135deg, #22c55e, #16a34a);
+    color: white;
+    padding: 4px 10px;
+    border-radius: 12px;
+    margin-top: 8px;
+    white-space: nowrap;
+    box-shadow: 0 2px 6px rgba(34, 197, 94, 0.3);
 }
 
 .calendar-controls {
@@ -2399,9 +2433,11 @@ input[type="number"] {
     padding-top: 10px;
     border-top: 1px solid #ddd;
 }
+
 /* --- FIXES FOR BOOKING WIZARD --- */
 .modal {
-    display: none; /* Hidden by default */
+    display: none;
+    /* Hidden by default */
     position: fixed;
     z-index: 2000;
     left: 0;
@@ -2422,7 +2458,8 @@ input[type="number"] {
     max-height: 90vh;
     display: flex;
     flex-direction: column;
-    margin: auto; /* Fallback */
+    margin: auto;
+    /* Fallback */
     position: relative;
     background: white;
     border-radius: 16px;
@@ -2435,7 +2472,8 @@ input[type="number"] {
     flex: 1;
     overflow-y: auto;
     margin-bottom: 20px;
-    padding-right: 5px; /* Space for scrollbar */
+    padding-right: 5px;
+    /* Space for scrollbar */
 }
 
 #booking-modal-footer {
@@ -2449,8 +2487,15 @@ input[type="number"] {
 }
 
 @keyframes zoomIn {
-    from { opacity: 0; transform: scale(0.95); }
-    to { opacity: 1; transform: scale(1); }
+    from {
+        opacity: 0;
+        transform: scale(0.95);
+    }
+
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
 }
 
 /* --- ROBUST FOOTER FIXES --- */
@@ -2463,7 +2508,8 @@ input[type="number"] {
     border-top: 1px solid #eee !important;
     background: white !important;
     width: 100% !important;
-    margin-top: auto !important; /* Push to bottom */
+    margin-top: auto !important;
+    /* Push to bottom */
     z-index: 9999 !important;
     position: relative !important;
 }
@@ -2478,6 +2524,8 @@ input[type="number"] {
 .modal-content.booking-box {
     display: flex !important;
     flex-direction: column !important;
-    overflow: visible !important; /* Allow footer to be seen if outside */
-    padding-bottom: 0 !important; /* Let footer handle padding */
+    overflow: visible !important;
+    /* Allow footer to be seen if outside */
+    padding-bottom: 0 !important;
+    /* Let footer handle padding */
 }

@@ -53,6 +53,50 @@ window.showToast = function (message, type = 'info') {
     }, 4000);
 };
 
+// DEV MODE: Quick Login
+window.devLogin = async function (phone, password) {
+    try {
+        // Find user by phone
+        const q = query(collection(db, "users"), where("phone", "==", phone));
+        const snapshot = await getDocs(q);
+
+        if (snapshot.empty) {
+            showToast(`User ${phone} not found!`, 'error');
+            return;
+        }
+
+        const userData = snapshot.docs[0].data();
+
+        // DEV MODE: Skip password check for quick testing
+        // In production, remove this and use proper auth
+
+        // Set current user
+        currentUser = { id: snapshot.docs[0].id, ...userData };
+
+        // Update UI
+        document.getElementById('login-btn').style.display = 'none';
+        document.getElementById('user-profile').style.display = 'flex';
+        document.getElementById('user-name').textContent = currentUser.name || 'User';
+
+        // Close auth modal if open
+        closeModal('auth-modal');
+
+        // Load role-specific dashboard
+        if (currentUser.role === 'admin') {
+            document.getElementById('dashboard-admin').style.display = 'block';
+            loadAdminDashboard();
+        } else if (currentUser.role === 'owner') {
+            loadOwnerDashboard();
+        }
+
+        showToast(`Welcome back, ${currentUser.name}! 👋`, 'success');
+
+    } catch (error) {
+        console.error('Dev login error:', error);
+        showToast('Login failed: ' + error.message, 'error');
+    }
+};
+
 // Utility: Custom Confirm Modal (Promise-based)
 window.showConfirm = function (message) {
     return new Promise((resolve) => {
@@ -995,7 +1039,8 @@ window.submitBooking = async function () {
             userId: currentUser.id || currentUser.phone,
             customerName: currentUser.name,
             customerPhone: currentUser.phone,
-            storeId: bookingState.merchant.id,
+            storeId: bookingState.merchant.id, // Ensure this is saved as storeId
+            merchantId: bookingState.merchant.id, // Keep for backward compatibility
             storeName: bookingState.merchant.name,
 
             // New Array Structure
@@ -1964,13 +2009,24 @@ async function loadFinancials(filter = currentFinancialFilter) {
         filteredBookings = allBookings.filter(b => b.bookingDate >= monthAgo);
     }
 
+    // Create a Set of all paid booking IDs for efficient lookup
+    const paidBookingIds = new Set();
+    allInvoices.forEach(inv => {
+        if (inv.isPaid && inv.bookings) {
+            inv.bookings.forEach(b => paidBookingIds.add(b.id || b.bookingId)); // Handle potential schema variations
+        }
+    });
+
     // Calculate stats
     const completedBookings = filteredBookings.filter(b => b.status === 'completed');
-    const pendingBookings = filteredBookings.filter(b => b.status === 'pending');
 
     const totalRevenue = completedBookings.reduce((sum, b) => sum + b.servicePrice, 0);
     const totalCommission = completedBookings.reduce((sum, b) => sum + b.commission, 0);
-    const pendingAmount = pendingBookings.reduce((sum, b) => sum + b.commission, 0);
+
+    // Pending Payouts = Commission from COMPLETED bookings that are NOT paid
+    const pendingPayoutAmount = completedBookings
+        .filter(b => !paidBookingIds.has(b.id))
+        .reduce((sum, b) => sum + b.commission, 0);
 
     // This month stats (always from current month)
     const thisMonthBookings = allBookings.filter(b => {
@@ -1983,7 +2039,7 @@ async function loadFinancials(filter = currentFinancialFilter) {
     // Update stat cards
     document.getElementById('stat-total-revenue').textContent = totalRevenue.toLocaleString() + ' IQD';
     document.getElementById('stat-commission').textContent = totalCommission.toLocaleString() + ' IQD';
-    document.getElementById('stat-pending').textContent = pendingAmount.toLocaleString() + ' IQD';
+    document.getElementById('stat-pending').textContent = pendingPayoutAmount.toLocaleString() + ' IQD';
     document.getElementById('stat-this-month').textContent = thisMonthCommission.toLocaleString() + ' IQD';
 
     // Update table
@@ -1992,14 +2048,6 @@ async function loadFinancials(filter = currentFinancialFilter) {
         tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: #888;">No bookings found</td></tr>';
         return;
     }
-
-    // Create a Set of all paid booking IDs for efficient lookup
-    const paidBookingIds = new Set();
-    allInvoices.forEach(inv => {
-        if (inv.isPaid && inv.bookings) {
-            inv.bookings.forEach(b => paidBookingIds.add(b.id || b.bookingId)); // Handle potential schema variations
-        }
-    });
 
     tbody.innerHTML = filteredBookings.slice(0, 15).map((booking, index) => {
         const isPaid = paidBookingIds.has(booking.id);
@@ -2070,6 +2118,7 @@ async function loadInvoicesFromFirestore() {
                 paidAt: data.paidAt ? new Date(data.paidAt) : null,
                 // Convert booking summaries back to usable format
                 bookings: (data.bookingSummaries || []).map(b => ({
+                    id: b.id, // Linked Booking ID
                     bookingDate: new Date(b.date),
                     serviceName: b.serviceName,
                     customerName: b.customerName,
@@ -2213,6 +2262,7 @@ window.saveInvoice = async function () {
             isPaid: false,
             // Store booking summaries (not full objects)
             bookingSummaries: currentInvoiceData.bookings.map(b => ({
+                id: b.id, // Linked Booking ID
                 date: b.bookingDate.toISOString(),
                 serviceName: b.serviceName,
                 customerName: b.customerName,
@@ -2635,6 +2685,7 @@ window.loadOwnerDashboard = async function () {
 
     // Show dashboard
     document.getElementById('dashboard-customer').style.display = 'none';
+    document.getElementById('dashboard-admin').style.display = 'none'; // Ensure admin dashboard is hidden
     document.getElementById('dashboard-owner').style.display = 'block';
 
     // Update Store Badge
@@ -2681,7 +2732,7 @@ async function loadOwnerOverview() {
     // For now, we will just use dummy or fetch if bookings collection exists
     // Let's assume we fetch all bookings for this merchant
     try {
-        const q = query(collection(db, "bookings"), where("merchantId", "==", storeId));
+        const q = query(collection(db, "bookings"), where("storeId", "==", storeId));
         const snapshot = await getDocs(q);
         const bookings = [];
         snapshot.forEach(d => bookings.push({ id: d.id, ...d.data() }));
@@ -2693,8 +2744,9 @@ async function loadOwnerOverview() {
             if (b.status === 'completed') {
                 totalRevenue += (b.price || 0);
             }
-            // Count Today's
-            if (b.createdAt && b.createdAt.toDate().toDateString() === today) {
+            // Count Today's - handle both ISO string and Firestore Timestamp
+            const createdDate = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt);
+            if (createdDate && createdDate.toDateString() === today) {
                 todayBookingsCount++;
             }
             // Count Pending
@@ -2714,12 +2766,14 @@ async function loadOwnerOverview() {
         if (pendingBookings.length === 0) {
             pendingList.innerHTML = '<div class="empty-state">No pending bookings.</div>';
         } else {
-            pendingList.innerHTML = pendingBookings.map(b => `
+            pendingList.innerHTML = pendingBookings.map(b => {
+                const dateStr = b.createdAt?.toDate ? b.createdAt.toDate().toLocaleString() : new Date(b.createdAt).toLocaleString();
+                return `
                 <div class="appointment-card" style="padding: 15px; border: 1px solid #eee; margin-bottom: 10px; border-radius: 8px; border-left: 4px solid #eab308;">
                     <div style="display: flex; justify-content: space-between; align-items: center;">
                         <div>
                             <strong>${b.customerName || 'Customer'}</strong> requested <strong>${b.serviceName}</strong>
-                            <div style="font-size: 0.85rem; color: #888;">${b.createdAt ? b.createdAt.toDate().toLocaleString() : ''}</div>
+                            <div style="font-size: 0.85rem; color: #888;">${dateStr}</div>
                         </div>
                         <div>
                             <button class="btn-primary" style="padding: 4px 12px; font-size: 0.8rem;" onclick="updateBookingStatus('${b.id}', 'confirmed')">Accept</button>
@@ -2727,7 +2781,7 @@ async function loadOwnerOverview() {
                         </div>
                     </div>
                 </div>
-            `).join('');
+            `}).join('');
         }
 
     } catch (e) {
@@ -2755,11 +2809,25 @@ async function loadOwnerBookings(status) {
     const tbody = document.getElementById('owner-bookings-tbody');
     tbody.innerHTML = '<tr><td colspan="6">Loading...</td></tr>';
 
+    // Check if storeId exists
+    if (!currentUser || !currentUser.storeId) {
+        tbody.innerHTML = '<tr><td colspan="6">No store linked to this account.</td></tr>';
+        return;
+    }
+
     try {
-        const q = query(collection(db, "bookings"), where("storeId", "==", currentUser.storeId), orderBy("createdAt", "desc"));
-        const snapshot = await getDocs(q); // In real app, might need composite index
+        // Query without orderBy to avoid composite index requirement
+        const q = query(collection(db, "bookings"), where("storeId", "==", currentUser.storeId));
+        const snapshot = await getDocs(q);
         let bookings = [];
         snapshot.forEach(d => bookings.push({ id: d.id, ...d.data() }));
+
+        // Sort by createdAt in JS (descending)
+        bookings.sort((a, b) => {
+            const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt);
+            const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt);
+            return dateB - dateA;
+        });
 
         if (status !== 'all') {
             bookings = bookings.filter(b => b.status === status);
@@ -2770,15 +2838,17 @@ async function loadOwnerBookings(status) {
             return;
         }
 
-        tbody.innerHTML = bookings.map(b => `
+        tbody.innerHTML = bookings.map(b => {
+            const dateStr = b.createdAt?.toDate ? b.createdAt.toDate().toLocaleString() : new Date(b.createdAt).toLocaleString();
+            return `
             <tr>
-                <td>${b.customerName}</td>
-                <td>${b.serviceName}</td>
-                <td>${b.createdAt ? b.createdAt.toDate().toLocaleString() : 'N/A'}</td>
-                <td>${b.price.toLocaleString()} IQD</td>
+                <td>${b.customerName || 'Customer'}</td>
+                <td>${b.serviceName || 'Service'}</td>
+                <td>${dateStr}</td>
+                <td>${(b.price || 0).toLocaleString()} IQD</td>
                 <td>
                     <span class="status-badge ${b.status}">
-                        ${b.status.charAt(0).toUpperCase() + b.status.slice(1)}
+                        ${b.status ? b.status.charAt(0).toUpperCase() + b.status.slice(1) : 'Unknown'}
                     </span>
                 </td>
                 <td>
@@ -2790,14 +2860,159 @@ async function loadOwnerBookings(status) {
                     ` : ''}
                 </td>
             </tr>
-        `).join('');
+        `}).join('');
 
     } catch (e) {
         console.error("Error loading bookings:", e);
-        // Fallback if index missing
-        tbody.innerHTML = '<tr><td colspan="6">Error or Missing Index. Please check console.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6">Error loading bookings. Check console.</td></tr>';
     }
 }
+
+// Update Booking Status (Confirm/Reject/Complete)
+window.updateBookingStatus = async function (bookingId, newStatus) {
+    // Confirmation messages for each action
+    const confirmMessages = {
+        'confirmed': 'Are you sure you want to ACCEPT this booking?',
+        'cancelled': 'Are you sure you want to REJECT this booking?',
+        'completed': 'Mark this booking as COMPLETED?'
+    };
+
+    const confirmed = await showConfirm(confirmMessages[newStatus] || 'Are you sure?');
+    if (!confirmed) return;
+
+    try {
+        const bookingRef = doc(db, "bookings", bookingId);
+        const bookingSnap = await getDoc(bookingRef);
+
+        if (!bookingSnap.exists()) {
+            showToast('Booking not found!', 'error');
+            return;
+        }
+
+        const bookingData = bookingSnap.data();
+
+        // Update booking status
+        await updateDoc(bookingRef, {
+            status: newStatus,
+            updatedAt: new Date().toISOString()
+        });
+
+        // If confirmed, add to store calendar
+        if (newStatus === 'confirmed') {
+            const calendarEvent = {
+                bookingId: bookingId,
+                storeId: bookingData.storeId || '',
+                storeName: bookingData.storeName || '',
+                customerName: bookingData.customerName || 'Customer',
+                customerPhone: bookingData.customerPhone || '',
+                serviceName: bookingData.serviceName || 'Service',
+                price: bookingData.price || 0,
+                duration: bookingData.serviceDuration || bookingData.duration || 30,
+                bookingDate: bookingData.bookingDate || new Date().toISOString(),
+                bookingTime: bookingData.bookingTime || bookingData.time || '10:00',
+                status: 'confirmed',
+                createdAt: new Date().toISOString()
+            };
+
+            await addDoc(collection(db, "storeCalendar"), calendarEvent);
+            showToast('✅ Booking Confirmed & Added to Calendar!', 'success');
+        } else if (newStatus === 'cancelled') {
+            // Remove from calendar if exists
+            const calQ = query(collection(db, "storeCalendar"), where("bookingId", "==", bookingId));
+            const calSnap = await getDocs(calQ);
+            calSnap.forEach(async (d) => {
+                await deleteDoc(doc(db, "storeCalendar", d.id));
+            });
+            showToast('❌ Booking Declined', 'info');
+        } else if (newStatus === 'completed') {
+            // Update calendar event status
+            const calQ = query(collection(db, "storeCalendar"), where("bookingId", "==", bookingId));
+            const calSnap = await getDocs(calQ);
+            calSnap.forEach(async (d) => {
+                await updateDoc(doc(db, "storeCalendar", d.id), { status: 'completed' });
+            });
+
+            // === FINANCIAL TRACKING ===
+            // Handle both legacy and new price fields
+            let servicePrice = 0;
+            if (bookingData.price !== undefined) servicePrice = Number(bookingData.price);
+            else if (bookingData.servicePrice !== undefined) servicePrice = Number(bookingData.servicePrice);
+
+            const commission = Math.round(servicePrice * 0.10); // 10% commission
+            const storeId = bookingData.storeId || bookingData.merchantId || currentUser.storeId;
+
+            console.log('Financial tracking:', { storeId, servicePrice, commission, raw: bookingData });
+
+            if (!storeId) {
+                console.error('No storeId found for financial tracking!');
+                showToast('Warning: Financials not updated (missing store ID)', 'warning');
+            } else {
+                // Update store financials
+                const storeFinRef = doc(db, "storeFinancials", storeId);
+
+                try {
+                    const storeFinSnap = await getDoc(storeFinRef);
+
+                    if (storeFinSnap.exists()) {
+                        const currentData = storeFinSnap.data();
+                        await updateDoc(storeFinRef, {
+                            totalRevenue: (currentData.totalRevenue || 0) + servicePrice,
+                            totalCommission: (currentData.totalCommission || 0) + commission,
+                            updatedAt: new Date().toISOString()
+                        });
+                    } else {
+                        await setDoc(storeFinRef, {
+                            storeId: storeId,
+                            storeName: bookingData.storeName || '',
+                            totalRevenue: servicePrice,
+                            totalCommission: commission,
+                            paidCommission: 0,
+                            createdAt: new Date().toISOString(),
+                            updatedAt: new Date().toISOString()
+                        });
+                    }
+                    console.log('Financials updated successfully');
+                } catch (err) {
+                    console.error('Error updating financials doc:', err);
+                }
+
+                // Create transaction
+                try {
+                    await addDoc(collection(db, "storeTransactions"), {
+                        storeId: storeId,
+                        storeName: bookingData.storeName || '',
+                        bookingId: bookingId,
+                        type: 'revenue',
+                        amount: servicePrice,
+                        commission: commission,
+                        serviceName: bookingData.serviceName || 'Service',
+                        customerName: bookingData.customerName || 'Customer',
+                        createdAt: new Date().toISOString()
+                    });
+                } catch (err) {
+                    console.error('Error adding transaction:', err);
+                }
+
+                showToast(`🏁 Complete! +${servicePrice.toLocaleString()} IQD Revenue`, 'success');
+
+                // Refresh financials tab if visible
+                if (document.getElementById('owner-financials').style.display !== 'none') {
+                    loadOwnerFinancials();
+                }
+            }
+        }
+
+
+
+        // Refresh bookings list
+        loadOwnerBookings('all');
+        loadOwnerCalendar();
+
+    } catch (error) {
+        console.error('Error updating booking:', error);
+        showToast('Failed to update booking: ' + error.message, 'error');
+    }
+};
 
 // 2b. Calendar Tab
 let currentCalendarDate = new Date();
@@ -2844,21 +3059,40 @@ function renderOwnerCalendar(bookings) {
 
         const dayCell = document.createElement('div');
         dayCell.className = 'calendar-day';
-        dayCell.innerText = i;
+
+        // Day number
+        const dayNum = document.createElement('span');
+        dayNum.className = 'day-number';
+        dayNum.innerText = i;
+        dayCell.appendChild(dayNum);
 
         // Check for bookings
         const dayBookings = bookings.filter(b => {
             if (!b.bookingDate) return false;
-            // Handle Firestore Timestamp or Date object
+            // Handle Firestore Timestamp or Date object or ISO string
             const bDate = b.bookingDate.toDate ? b.bookingDate.toDate() : new Date(b.bookingDate);
             return bDate.toDateString() === dateString;
         });
 
         if (dayBookings.length > 0) {
             dayCell.classList.add('has-bookings');
+
+            // Add line break
+            dayCell.appendChild(document.createElement('br'));
+
+            // Booking count badge
+            const badge = document.createElement('span');
+            badge.className = 'booking-count-badge';
+            badge.innerText = dayBookings.length === 1 ? '1 Event' : `${dayBookings.length} Events`;
+            dayCell.appendChild(badge);
         }
 
-        dayCell.onclick = () => selectCalendarDay(dayCell, dayBookings, dateString);
+        // Highlight today
+        if (dayDate.toDateString() === new Date().toDateString()) {
+            dayCell.classList.add('today');
+        }
+
+        dayCell.onclick = () => openCalendarDayModal(dayBookings, dateString);
         grid.appendChild(dayCell);
     }
 }
@@ -2868,33 +3102,85 @@ window.changeCalendarMonth = function (offset) {
     loadOwnerCalendar();
 }
 
-function selectCalendarDay(element, bookings, dateString) {
-    // UI Active State
-    document.querySelectorAll('.calendar-day').forEach(d => d.classList.remove('active'));
-    element.classList.add('active');
-
-    // Show Details
-    const detailsContainer = document.getElementById('calendar-day-details');
-    const bookingsList = document.getElementById('calendar-day-bookings');
-    document.getElementById('selected-date-header').innerText = `Bookings for ${dateString}`;
-
-    detailsContainer.style.display = 'block';
+function openCalendarDayModal(bookings, dateString) {
+    // Create modal content
+    let modalContent = `
+        <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h2 style="margin: 0;">📅 ${dateString}</h2>
+            <span class="close-modal" onclick="closeModal('calendar-day-modal')">&times;</span>
+        </div>
+    `;
 
     if (bookings.length === 0) {
-        bookingsList.innerHTML = '<p style="color: #666;">No bookings for this day.</p>';
-        return;
+        modalContent += `
+            <div style="text-align: center; padding: 40px; color: #888;">
+                <span style="font-size: 3rem;">📭</span>
+                <p>No bookings for this day.</p>
+            </div>
+        `;
+    } else {
+        modalContent += `
+            <div style="margin-bottom: 15px; padding: 10px; background: linear-gradient(135deg, #667eea, #764ba2); color: white; border-radius: 8px; text-align: center;">
+                <strong>${bookings.length}</strong> booking${bookings.length > 1 ? 's' : ''} scheduled
+            </div>
+        `;
+
+        modalContent += bookings.map(b => {
+            const bookingTime = b.bookingTime || b.time || 'TBD';
+            const dateStr = b.createdAt?.toDate ? b.createdAt.toDate().toLocaleString() : new Date(b.createdAt).toLocaleString();
+
+            return `
+            <div style="background: #f9fafb; padding: 15px; border-radius: 10px; margin-bottom: 12px; border-left: 4px solid ${b.status === 'confirmed' ? '#22c55e' : b.status === 'pending' ? '#eab308' : b.status === 'completed' ? '#3b82f6' : '#ef4444'
+                };">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                    <div>
+                        <strong style="font-size: 1.1rem;">${b.serviceName || 'Service'}</strong>
+                        <div style="margin-top: 8px;">
+                            <span style="color: #666;">👤 Customer:</span> <strong>${b.customerName || 'N/A'}</strong>
+                        </div>
+                        <div style="margin-top: 4px;">
+                            <span style="color: #666;">📞 Phone:</span> ${b.customerPhone || 'N/A'}
+                        </div>
+                        <div style="margin-top: 4px;">
+                            <span style="color: #666;">🕐 Time:</span> <strong>${bookingTime}</strong>
+                        </div>
+                        <div style="margin-top: 4px;">
+                            <span style="color: #666;">💰 Price:</span> ${(b.price || 0).toLocaleString()} IQD
+                        </div>
+                        <div style="margin-top: 4px; font-size: 0.8rem; color: #888;">
+                            Booked: ${dateStr}
+                        </div>
+                    </div>
+                    <span class="status-badge ${b.status}" style="padding: 5px 12px;">
+                        ${b.status ? b.status.charAt(0).toUpperCase() + b.status.slice(1) : 'Unknown'}
+                    </span>
+                </div>
+                ${b.status === 'pending' ? `
+                <div style="margin-top: 12px; display: flex; gap: 8px;">
+                    <button class="btn-primary" style="padding: 6px 16px; font-size: 0.85rem;" onclick="updateBookingStatus('${b.id}', 'confirmed')">✅ Accept</button>
+                    <button class="btn-outline" style="padding: 6px 16px; font-size: 0.85rem; border-color: #ef4444; color: #ef4444;" onclick="updateBookingStatus('${b.id}', 'cancelled')">❌ Reject</button>
+                </div>
+                ` : b.status === 'confirmed' ? `
+                <div style="margin-top: 12px;">
+                    <button class="btn-primary" style="padding: 6px 16px; font-size: 0.85rem;" onclick="updateBookingStatus('${b.id}', 'completed')">🏁 Mark Complete</button>
+                </div>
+                ` : ''}
+            </div>
+        `}).join('');
     }
 
-    bookingsList.innerHTML = bookings.map(b => `
-        <div class="booking-detail-item">
-            <div>
-                <strong>${b.serviceName}</strong><br>
-                <span style="font-size: 0.9rem; color: #666;">${b.customerName}</span>
-                <div style="font-size: 0.8rem; color: #888;">${new Date(b.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
-            </div>
-            <span class="status-badge ${b.status}">${b.status}</span>
-        </div>
-    `).join('');
+    // Create or update modal
+    let modal = document.getElementById('calendar-day-modal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'calendar-day-modal';
+        modal.className = 'modal';
+        modal.innerHTML = `<div class="modal-content" style="max-width: 500px;"></div>`;
+        document.body.appendChild(modal);
+    }
+
+    modal.querySelector('.modal-content').innerHTML = modalContent;
+    modal.style.display = 'flex';
 }
 
 // 3. My Store Tab
@@ -2952,58 +3238,100 @@ async function loadOwnerFinancials() {
     const storeId = currentUser.storeId;
     if (!storeId) return;
 
-    // 1. Calculate Total Revenue & Commission Due
-    let totalRevenue = 0;
-
     try {
-        // Fetch bookings for revenue
-        const bookingsQ = query(collection(db, "bookings"), where("merchantId", "==", storeId));
-        const bookingSnapshot = await getDocs(bookingsQ);
+        // 1. Load store financials from storeFinancials collection
+        const storeFinRef = doc(db, "storeFinancials", storeId);
+        const storeFinSnap = await getDoc(storeFinRef);
 
-        bookingSnapshot.forEach(doc => {
-            const b = doc.data();
-            if (b.status === 'completed') {
-                totalRevenue += (b.price || 0);
-            }
-        });
+        let totalRevenue = 0;
+        let totalCommission = 0;
+        let paidCommission = 0;
 
+        if (storeFinSnap.exists()) {
+            const data = storeFinSnap.data();
+            totalRevenue = data.totalRevenue || 0;
+            totalCommission = data.totalCommission || 0;
+            paidCommission = data.paidCommission || 0;
+        }
+
+        const pendingCommission = totalCommission - paidCommission;
+        const netEarnings = totalRevenue - totalCommission;
+
+        // Update stat cards
         document.getElementById('owner-fin-total').innerText = `${totalRevenue.toLocaleString()} IQD`;
+        document.getElementById('owner-fin-due').innerText = `${pendingCommission.toLocaleString()} IQD`;
+
+        // Update net earnings if element exists
+        const netEl = document.getElementById('owner-fin-net');
+        if (netEl) netEl.innerText = `${netEarnings.toLocaleString()} IQD`;
 
     } catch (e) {
-        console.error("Error calculating owner revenue:", e);
+        console.error("Error loading store financials:", e);
     }
 
-    // 2. Fetch Invoices for Commission Due & History
+    // 2. Load recent transactions
     try {
-        const invoicesQ = query(collection(db, "invoices"), where("storeId", "==", storeId), orderBy("createdAt", "desc"));
+        const transQ = query(
+            collection(db, "storeTransactions"),
+            where("storeId", "==", storeId)
+        );
+        const transSnap = await getDocs(transQ);
+        const transactions = [];
+        transSnap.forEach(d => transactions.push({ id: d.id, ...d.data() }));
+
+        // Sort by date (newest first)
+        transactions.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+        // Render recent transactions
+        const transactionsList = document.getElementById('owner-transactions-list');
+        if (transactionsList) {
+            if (transactions.length === 0) {
+                transactionsList.innerHTML = '<div class="empty-state">No transactions yet. Complete bookings to see revenue here.</div>';
+            } else {
+                transactionsList.innerHTML = transactions.slice(0, 10).map(t => `
+                    <div class="transaction-item" style="display: flex; justify-content: space-between; padding: 12px; border-bottom: 1px solid #eee;">
+                        <div>
+                            <strong>${t.serviceName}</strong>
+                            <div style="font-size: 0.85rem; color: #666;">${t.customerName} • ${new Date(t.createdAt).toLocaleDateString()}</div>
+                        </div>
+                        <div style="text-align: right;">
+                            <div style="color: #22c55e; font-weight: 600;">+${t.amount.toLocaleString()} IQD</div>
+                            <div style="font-size: 0.75rem; color: #888;">-${t.commission.toLocaleString()} commission</div>
+                        </div>
+                    </div>
+                `).join('');
+            }
+        }
+    } catch (e) {
+        console.error("Error loading transactions:", e);
+    }
+
+    // 3. Fetch Invoices from Admin
+    try {
+        const invoicesQ = query(collection(db, "invoices"), where("storeId", "==", storeId));
         const invoiceSnapshot = await getDocs(invoicesQ);
 
         const invoices = [];
-        let commissionDue = 0;
-
-        invoiceSnapshot.forEach(doc => {
-            const inv = { id: doc.id, ...doc.data() };
-            invoices.push(inv);
-            if (!inv.isPaid) {
-                commissionDue += (inv.commission || 0);
-            }
+        invoiceSnapshot.forEach(d => {
+            invoices.push({ id: d.id, ...d.data() });
         });
 
-        document.getElementById('owner-fin-due').innerText = `${commissionDue.toLocaleString()} IQD`;
+        // Sort by date
+        invoices.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
         // Render Invoices List
         const invoicesList = document.getElementById('owner-invoices-list');
         if (invoices.length === 0) {
-            invoicesList.innerHTML = '<div class="empty-state">No invoices generated by admin yet.</div>';
+            invoicesList.innerHTML = '<div class="empty-state">No invoices from admin yet.</div>';
         } else {
             invoicesList.innerHTML = invoices.map(inv => `
                 <div class="invoice-card">
                     <div class="invoice-card-info">
-                        <h4>${inv.period}</h4>
-                        <p>${inv.serviceCount} services • ${new Date(inv.createdAt).toLocaleDateString()}</p>
+                        <h4>${inv.period || 'Invoice'}</h4>
+                        <p>${inv.serviceCount || 0} services • ${new Date(inv.createdAt).toLocaleDateString()}</p>
                     </div>
                     <div class="invoice-card-amount">
-                        <div class="amount">${inv.commission.toLocaleString()} IQD</div>
+                        <div class="amount">${(inv.commission || 0).toLocaleString()} IQD</div>
                         ${inv.isPaid
                     ? '<div class="date" style="color: green;">✓ Paid</div>'
                     : '<div class="date" style="color: var(--primary);">Due</div>'}
@@ -3014,14 +3342,13 @@ async function loadOwnerFinancials() {
                 </div>
             `).join('');
         }
-
     } catch (e) {
         console.error("Error loading owner invoices:", e);
-        document.getElementById('owner-invoices-list').innerHTML = '<div class="empty-state">Error loading invoices. Check console.</div>';
+        document.getElementById('owner-invoices-list').innerHTML = '<div class="empty-state">Error loading invoices.</div>';
     }
 }
 
-// Helper for location picker in owner mode
+
 window.openLocationPickerForOwner = function () {
     window.isOwnerEditing = true; // flag to differentiate
     openLocationPicker();
